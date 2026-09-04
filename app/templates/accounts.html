@@ -7,9 +7,23 @@
 {% else %}
 <div class="card-grid">
   {% for account in accounts %}
+  {% set summary = usage_summaries.get(account.id) %}
   <a class="card account-card" href="{{ url_for('explorer.buckets', account_id=account.id) }}">
     <div class="account-card-name">{{ account.name }}</div>
     <div class="mono hint">{{ account.account_number or "—" }} · {{ account.region }}</div>
+    <div class="usage-block">
+      {% if summary is none %}
+        <span class="hint">Volumétrie indisponible</span>
+      {% elif summary.computed_count == 0 %}
+        <span class="hint">Volumétrie non calculée</span>
+      {% else %}
+        <span class="usage-size">{{ summary.total_bytes | format_size }}</span>
+        {% if summary.computed_count < summary.bucket_count %}
+          <span class="hint">({{ summary.computed_count }}/{{ summary.bucket_count }} buckets calculés)</span>
+        {% endif %}
+        <div class="hint">Maj {{ summary.oldest_computed_at.strftime('%d/%m/%Y %H:%M') }} UTC</div>
+      {% endif %}
+    </div>
   </a>
   {% endfor %}
 </div>

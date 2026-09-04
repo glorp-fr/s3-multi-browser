@@ -248,3 +248,32 @@ a:hover { text-decoration: underline; }
 .flash { padding: 10px 14px; border-radius: 7px; font-size: 13px; }
 .flash.success { background: var(--ok-bg); color: var(--ok); }
 .flash.error { background: var(--err-bg); color: var(--err); }
+
+/* Usage / volumetry */
+
+.usage-block { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.usage-size { font-family: "DM Mono", monospace; font-weight: 600; color: var(--os-blue-mid); }
+.usage-summary {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 7px;
+  padding: 10px 14px; margin-bottom: 14px; font-size: 13px;
+}
+.usage-summary .usage-size { font-size: 15px; }
+
+.btn.icon[disabled], .btn.disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Pagination */
+
+.pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 16px; }
+
+/* Toolbar selects */
+
+.inline-form select {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel);
+  font: inherit;
+}
+.inline-form label { display: flex; align-items: center; gap: 6px; }

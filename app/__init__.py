@@ -2,13 +2,15 @@ import os
 
 from flask import Flask, g
 
-from . import auth, storage
+from . import auth, storage, usage_cache
 
 
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", os.environ.get("APP_MASTER_KEY", "dev"))
     app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "512")) * 1024 * 1024
+
+    app.jinja_env.filters["format_size"] = usage_cache.format_size
 
     storage.bootstrap_admin_if_empty()
 

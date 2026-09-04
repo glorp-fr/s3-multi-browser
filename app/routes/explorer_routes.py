@@ -1,15 +1,19 @@
+import io
+
 from botocore.exceptions import ClientError
 from flask import (
     Blueprint, abort, flash, g, redirect, render_template,
     request, send_file, url_for,
 )
-import io
 
-from .. import storage
+from .. import storage, usage_cache
 from ..auth import accessible_accounts, can_access_account, can_write, login_required
 from ..s3client import get_client
 
 bp = Blueprint("explorer", __name__)
+
+PER_PAGE_OPTIONS = (20, 30, 50, 100)
+DEFAULT_PER_PAGE = 20
 
 
 def _get_authorized_account(account_id):
@@ -17,6 +21,26 @@ def _get_authorized_account(account_id):
     if not account or not can_access_account(g.user, account_id):
         abort(404)
     return account
+
+
+def _summarize_usage(account_id, bucket_names):
+    """Aggregate cached (not live) usage across a set of buckets for one account."""
+    total_bytes = 0
+    computed_count = 0
+    oldest = None
+    for name in bucket_names:
+        entry = usage_cache.get(account_id, name)
+        if entry:
+            total_bytes += entry["size_bytes"]
+            computed_count += 1
+            if oldest is None or entry["computed_at"] < oldest:
+                oldest = entry["computed_at"]
+    return {
+        "total_bytes": total_bytes,
+        "bucket_count": len(bucket_names),
+        "computed_count": computed_count,
+        "oldest_computed_at": oldest,
+    }
 
 
 @bp.route("/")
@@ -28,7 +52,17 @@ def index():
 @bp.route("/accounts")
 @login_required
 def accounts():
-    return render_template("accounts.html", accounts=accessible_accounts(g.user))
+    accs = accessible_accounts(g.user)
+    usage_summaries = {}
+    for account in accs:
+        try:
+            client = get_client(account)
+            bucket_names = [b["Name"] for b in client.list_buckets().get("Buckets", [])]
+            usage_summaries[account["id"]] = _summarize_usage(account["id"], bucket_names)
+        except Exception:
+            # A single mis-configured/unreachable account must not break the whole page.
+            usage_summaries[account["id"]] = None
+    return render_template("accounts.html", accounts=accs, usage_summaries=usage_summaries)
 
 
 @bp.route("/accounts/<account_id>/buckets")
@@ -42,8 +76,22 @@ def buckets(account_id):
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
         bucket_list = []
+
+    buckets_view = []
+    for b in bucket_list:
+        entry = usage_cache.get(account_id, b["Name"])
+        buckets_view.append({
+            "name": b["Name"],
+            "creation_date": b["CreationDate"],
+            "usage": entry,
+            "refresh_allowed": usage_cache.is_refresh_allowed(entry),
+            "next_refresh_at": usage_cache.next_refresh_at(entry),
+        })
+    usage_summary = _summarize_usage(account_id, [b["Name"] for b in bucket_list])
+
     return render_template(
-        "buckets.html", account=account, buckets=bucket_list, can_write=can_write(g.user)
+        "buckets.html", account=account, buckets=buckets_view,
+        usage_summary=usage_summary, can_write=can_write(g.user),
     )
 
 
@@ -81,30 +129,85 @@ def bucket_delete(account_id, bucket):
     return redirect(url_for("explorer.buckets", account_id=account_id))
 
 
+@bp.route("/accounts/<account_id>/buckets/<bucket>/usage/refresh", methods=["POST"])
+@login_required
+def bucket_usage_refresh(account_id, bucket):
+    account = _get_authorized_account(account_id)
+    if not can_write(g.user):
+        abort(403)
+    entry = usage_cache.get(account_id, bucket)
+    if not usage_cache.is_refresh_allowed(entry):
+        next_at = usage_cache.next_refresh_at(entry)
+        flash(
+            f"Volumétrie de « {bucket} » déjà calculée récemment. "
+            f"Prochaine actualisation possible à partir du {next_at:%d/%m/%Y %H:%M} UTC.",
+            "error",
+        )
+        return redirect(url_for("explorer.buckets", account_id=account_id))
+    client = get_client(account)
+    try:
+        size_bytes, object_count = usage_cache.compute_bucket_usage(client, bucket)
+        usage_cache.set(account_id, bucket, size_bytes, object_count)
+        flash(
+            f"Volumétrie de « {bucket} » mise à jour : "
+            f"{usage_cache.format_size(size_bytes)} ({object_count} objets)",
+            "success",
+        )
+    except ClientError as exc:
+        flash(f"Erreur OOS : {exc}", "error")
+    return redirect(url_for("explorer.buckets", account_id=account_id))
+
+
 @bp.route("/accounts/<account_id>/buckets/<bucket>")
 @login_required
 def objects(account_id, bucket):
     account = _get_authorized_account(account_id)
     prefix = request.args.get("prefix", "")
+    query = request.args.get("q", "").strip()
+
+    try:
+        per_page = int(request.args.get("per_page", DEFAULT_PER_PAGE))
+    except ValueError:
+        per_page = DEFAULT_PER_PAGE
+    if per_page not in PER_PAGE_OPTIONS:
+        per_page = DEFAULT_PER_PAGE
+
+    try:
+        page = int(request.args.get("page", 1))
+    except ValueError:
+        page = 1
+    page = max(page, 1)
+
     client = get_client(account)
     folders, files = [], []
     try:
+        # Search/pagination stay scoped to the current folder (not a recursive whole-bucket
+        # scan) so a single request stays bounded to this prefix's listing.
         paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
-            for common in page.get("CommonPrefixes", []):
+        for result_page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
+            for common in result_page.get("CommonPrefixes", []):
                 full = common["Prefix"]
-                folders.append({"prefix": full, "name": full[len(prefix):].rstrip("/")})
-            for obj in page.get("Contents", []):
+                name = full[len(prefix):].rstrip("/")
+                if not query or query.lower() in name.lower():
+                    folders.append({"prefix": full, "name": name})
+            for obj in result_page.get("Contents", []):
                 if obj["Key"] == prefix:
                     continue
-                files.append({
-                    "key": obj["Key"],
-                    "name": obj["Key"][len(prefix):],
-                    "size": obj["Size"],
-                    "last_modified": obj["LastModified"],
-                })
+                name = obj["Key"][len(prefix):]
+                if not query or query.lower() in name.lower():
+                    files.append({
+                        "key": obj["Key"],
+                        "name": name,
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"],
+                    })
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
+
+    total_files = len(files)
+    total_pages = max(1, -(-total_files // per_page))
+    page = min(page, total_pages)
+    files_page = files[(page - 1) * per_page: page * per_page]
 
     breadcrumbs = []
     parts = [p for p in prefix.split("/") if p]
@@ -115,9 +218,11 @@ def objects(account_id, bucket):
 
     return render_template(
         "explorer.html",
-        account=account, bucket=bucket, prefix=prefix,
-        folders=folders, files=files, breadcrumbs=breadcrumbs,
+        account=account, bucket=bucket, prefix=prefix, query=query,
+        folders=folders, files=files_page, breadcrumbs=breadcrumbs,
         can_write=can_write(g.user),
+        page=page, per_page=per_page, total_pages=total_pages, total_files=total_files,
+        per_page_options=PER_PAGE_OPTIONS,
     )
 
 

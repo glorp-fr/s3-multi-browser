@@ -25,6 +25,32 @@
 </div>
 {% endif %}
 
+<div class="toolbar">
+  <form class="inline-form" method="get" action="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket) }}">
+    <input type="hidden" name="prefix" value="{{ prefix }}">
+    <input type="text" name="q" value="{{ query }}" placeholder="Rechercher un objet dans ce dossier…">
+    <button class="btn ghost sm" type="submit">{{ macros.icon("search") }} Rechercher</button>
+    {% if query %}
+    <a class="btn ghost sm" href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=prefix) }}">{{ macros.icon("x") }} Effacer</a>
+    {% endif %}
+  </form>
+  <form class="inline-form" method="get" action="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket) }}">
+    <input type="hidden" name="prefix" value="{{ prefix }}">
+    <input type="hidden" name="q" value="{{ query }}">
+    <label class="hint">Par page
+      <select name="per_page" onchange="this.form.submit()">
+        {% for opt in per_page_options %}
+        <option value="{{ opt }}" {{ "selected" if opt == per_page else "" }}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+</div>
+
+{% if query %}
+<p class="hint">{{ total_files }} objet(s) trouvé(s) pour « {{ query }} » dans ce dossier.</p>
+{% endif %}
+
 <table class="tbl">
   <thead><tr><th>Nom</th><th>Taille</th><th>Modifié</th><th></th></tr></thead>
   <tbody>
@@ -69,4 +95,21 @@
   {% endfor %}
   </tbody>
 </table>
+
+{% if total_pages > 1 %}
+<div class="pager">
+  {% set base = url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=prefix, q=query, per_page=per_page) %}
+  {% if page > 1 %}
+    <a class="btn ghost sm" href="{{ base }}&page={{ page - 1 }}">&larr; Précédent</a>
+  {% else %}
+    <span class="btn ghost sm disabled">&larr; Précédent</span>
+  {% endif %}
+  <span class="hint">Page {{ page }} / {{ total_pages }} ({{ total_files }} objets)</span>
+  {% if page < total_pages %}
+    <a class="btn ghost sm" href="{{ base }}&page={{ page + 1 }}">Suivant &rarr;</a>
+  {% else %}
+    <span class="btn ghost sm disabled">Suivant &rarr;</span>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}
