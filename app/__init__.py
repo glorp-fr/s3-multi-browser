@@ -12,6 +12,7 @@ def create_app():
 
     app.jinja_env.filters["format_size"] = usage_cache.format_size
 
+    storage.migrate()
     storage.bootstrap_admin_if_empty()
 
     @app.before_request

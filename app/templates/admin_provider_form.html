@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ "Modifier" if provider else "Ajouter" }} un provider — Admin{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('admin.providers') }}">&larr; Providers</a>
+<h1 class="stitle">{{ "Modifier le provider" if provider else "Ajouter un provider" }}</h1>
+<form class="form-card" method="post">
+  <label>Nom
+    <input type="text" name="name" value="{{ provider.name if provider else '' }}" required placeholder="Outscale, AWS, MinIO…">
+  </label>
+  <label>Endpoint (avec <code>{region}</code>)
+    <input type="text" name="endpoint_template" class="mono" required
+           value="{{ provider.endpoint_template if provider else '' }}"
+           placeholder="https://s3.{region}.amazonaws.com">
+    <span class="hint">Ex. Outscale : https://oos.{region}.outscale.com — AWS : https://s3.{region}.amazonaws.com</span>
+  </label>
+  <label>Régions (une par ligne)
+    <textarea name="regions" rows="6" class="mono" placeholder="eu-west-1&#10;us-east-1">{{ provider.regions | join('\n') if provider else '' }}</textarea>
+  </label>
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+{% endblock %}

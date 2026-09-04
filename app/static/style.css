@@ -197,8 +197,13 @@ a:hover { text-decoration: underline; }
   border-radius: 12px;
   padding: 18px;
 }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 24px; }
 .account-card-name { font-weight: 700; margin-bottom: 4px; }
+.provider-heading {
+  display: flex; align-items: center; gap: 8px;
+  font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 15px;
+  color: var(--text-dim); margin: 0 0 10px;
+}
 
 .form-card {
   background: var(--panel);
@@ -211,13 +216,14 @@ a:hover { text-decoration: underline; }
   gap: 14px;
 }
 .form-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); font-weight: 600; }
-.form-card input, .form-card select {
+.form-card input, .form-card select, .form-card textarea {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--panel-2);
 }
+.form-card textarea { resize: vertical; }
 .form-card fieldset { border: 1px solid var(--border); border-radius: 7px; padding: 12px; }
 .form-card legend { font-size: 12px; color: var(--text-muted); padding: 0 6px; }
 .checkbox-row { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 400 !important; }

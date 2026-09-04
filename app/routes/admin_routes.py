@@ -6,12 +6,71 @@ from ..auth import ROLES, role_required
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+# --- Providers ---------------------------------------------------------------
+
+@bp.route("/providers")
+@role_required("admin")
+def providers():
+    return render_template("admin_providers.html", providers=storage.get_providers(), accounts=storage.get_accounts())
+
+
+@bp.route("/providers/new", methods=["GET", "POST"])
+@role_required("admin")
+def provider_new():
+    if request.method == "POST":
+        try:
+            storage.create_provider(
+                name=request.form["name"].strip(),
+                endpoint_template=request.form["endpoint_template"].strip(),
+                raw_regions=request.form.get("regions", "").splitlines(),
+            )
+            flash("Provider créé", "success")
+            return redirect(url_for("admin.providers"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_provider_form.html", provider=None)
+
+
+@bp.route("/providers/<provider_id>/edit", methods=["GET", "POST"])
+@role_required("admin")
+def provider_edit(provider_id):
+    provider = storage.get_provider_by_id(provider_id)
+    if not provider:
+        flash("Provider introuvable", "error")
+        return redirect(url_for("admin.providers"))
+    if request.method == "POST":
+        try:
+            storage.update_provider(
+                provider_id,
+                name=request.form["name"].strip(),
+                endpoint_template=request.form["endpoint_template"].strip(),
+                raw_regions=request.form.get("regions", "").splitlines(),
+            )
+            flash("Provider mis à jour", "success")
+            return redirect(url_for("admin.providers"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_provider_form.html", provider=provider)
+
+
+@bp.route("/providers/<provider_id>/delete", methods=["POST"])
+@role_required("admin")
+def provider_delete(provider_id):
+    try:
+        storage.delete_provider(provider_id)
+        flash("Provider supprimé", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("admin.providers"))
+
+
 # --- Accounts ---------------------------------------------------------------
 
 @bp.route("/accounts")
 @role_required("admin")
 def accounts():
-    return render_template("admin_accounts.html", accounts=storage.get_accounts())
+    providers_by_id = {p["id"]: p for p in storage.get_providers()}
+    return render_template("admin_accounts.html", accounts=storage.get_accounts(), providers_by_id=providers_by_id)
 
 
 @bp.route("/accounts/new", methods=["GET", "POST"])
@@ -22,6 +81,7 @@ def account_new():
             storage.create_account(
                 name=request.form["name"].strip(),
                 account_number=request.form.get("account_number", "").strip(),
+                provider_id=request.form["provider_id"],
                 region=request.form["region"].strip(),
                 access_key=request.form["access_key"].strip(),
                 secret_key=request.form["secret_key"].strip(),
@@ -30,7 +90,7 @@ def account_new():
             return redirect(url_for("admin.accounts"))
         except ValueError as exc:
             flash(str(exc), "error")
-    return render_template("admin_account_form.html", account=None)
+    return render_template("admin_account_form.html", account=None, providers=storage.get_providers())
 
 
 @bp.route("/accounts/<account_id>/edit", methods=["GET", "POST"])
@@ -46,6 +106,7 @@ def account_edit(account_id):
                 account_id,
                 name=request.form["name"].strip(),
                 account_number=request.form.get("account_number", "").strip(),
+                provider_id=request.form["provider_id"],
                 region=request.form["region"].strip(),
                 access_key=request.form["access_key"].strip(),
                 secret_key=request.form.get("secret_key", "").strip() or None,
@@ -54,7 +115,7 @@ def account_edit(account_id):
             return redirect(url_for("admin.accounts"))
         except ValueError as exc:
             flash(str(exc), "error")
-    return render_template("admin_account_form.html", account=account)
+    return render_template("admin_account_form.html", account=account, providers=storage.get_providers())
 
 
 @bp.route("/accounts/<account_id>/delete", methods=["POST"])

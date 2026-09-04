@@ -1,19 +1,21 @@
 {% extends "base.html" %}
 {% import "_macros.html" as macros %}
-{% block title %}Comptes OUTSCALE — Admin{% endblock %}
+{% block title %}Comptes — Admin{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1 class="stitle">Comptes OUTSCALE</h1>
+  <h1 class="stitle">Comptes</h1>
   <a class="btn blue" href="{{ url_for('admin.account_new') }}">{{ macros.icon("plus") }} Ajouter un compte</a>
 </div>
 <table class="tbl">
-  <thead><tr><th>Nom</th><th>N° de compte</th><th>Région</th><th>Access Key</th><th></th></tr></thead>
+  <thead><tr><th>Nom</th><th>Provider</th><th>Région</th><th>N° de compte</th><th>Access Key</th><th></th></tr></thead>
   <tbody>
   {% for account in accounts %}
+  {% set provider = providers_by_id.get(account.provider_id) %}
     <tr>
       <td>{{ account.name }}</td>
-      <td class="mono">{{ account.account_number or "—" }}</td>
+      <td>{{ provider.name if provider else "—" }}</td>
       <td class="mono">{{ account.region }}</td>
+      <td class="mono">{{ account.account_number or "—" }}</td>
       <td class="mono">{{ account.access_key }}</td>
       <td class="row-actions">
         <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('admin.account_edit', account_id=account.id) }}">{{ macros.icon("edit") }}</a>
@@ -24,7 +26,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="5" class="hint">Aucun compte configuré</td></tr>
+    <tr><td colspan="6" class="hint">Aucun compte configuré</td></tr>
   {% endfor %}
   </tbody>
 </table>

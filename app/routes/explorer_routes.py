@@ -53,6 +53,7 @@ def index():
 @login_required
 def accounts():
     accs = accessible_accounts(g.user)
+    providers_by_id = {p["id"]: p for p in storage.get_providers()}
     usage_summaries = {}
     for account in accs:
         try:
@@ -62,13 +63,24 @@ def accounts():
         except Exception:
             # A single mis-configured/unreachable account must not break the whole page.
             usage_summaries[account["id"]] = None
-    return render_template("accounts.html", accounts=accs, usage_summaries=usage_summaries)
+
+    groups = {}
+    for account in accs:
+        provider = providers_by_id.get(account["provider_id"])
+        provider_name = provider["name"] if provider else "Autre"
+        groups.setdefault(provider_name, []).append(account)
+
+    return render_template(
+        "accounts.html", groups=groups,
+        usage_summaries=usage_summaries, providers_by_id=providers_by_id,
+    )
 
 
 @bp.route("/accounts/<account_id>/buckets")
 @login_required
 def buckets(account_id):
     account = _get_authorized_account(account_id)
+    provider = storage.get_provider_by_id(account["provider_id"])
     client = get_client(account)
     try:
         resp = client.list_buckets()
@@ -90,7 +102,7 @@ def buckets(account_id):
     usage_summary = _summarize_usage(account_id, [b["Name"] for b in bucket_list])
 
     return render_template(
-        "buckets.html", account=account, buckets=buckets_view,
+        "buckets.html", account=account, provider=provider, buckets=buckets_view,
         usage_summary=usage_summary, can_write=can_write(g.user),
     )
 

@@ -1,10 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Comptes — OOS Viewer{% endblock %}
+{% import "_macros.html" as macros %}
+{% block title %}Comptes — S3 Viewer{% endblock %}
 {% block content %}
-<h1 class="stitle">Comptes OUTSCALE</h1>
-{% if not accounts %}
+<h1 class="stitle">Comptes</h1>
+{% if not groups %}
 <p class="hint">Aucun compte accessible. Contactez un administrateur.</p>
 {% else %}
+{% for provider_name, accounts in groups.items() %}
+<h2 class="provider-heading">{{ macros.icon("globe") }} {{ provider_name }}</h2>
 <div class="card-grid">
   {% for account in accounts %}
   {% set summary = usage_summaries.get(account.id) %}
@@ -27,5 +30,6 @@
   </a>
   {% endfor %}
 </div>
+{% endfor %}
 {% endif %}
 {% endblock %}

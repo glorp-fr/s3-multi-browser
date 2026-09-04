@@ -3,7 +3,7 @@
 {% block title %}{{ account.name }} — Buckets{% endblock %}
 {% block content %}
 <a class="back-link" href="{{ url_for('explorer.accounts') }}">&larr; Comptes</a>
-<h1 class="stitle">{{ account.name }} <span class="hint mono">({{ account.region }})</span></h1>
+<h1 class="stitle">{{ account.name }} <span class="hint mono">({{ provider.name if provider else "—" }} · {{ account.region }})</span></h1>
 
 <div class="usage-summary">
   {% if usage_summary.computed_count == 0 %}

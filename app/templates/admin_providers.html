@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Providers — Admin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="stitle">Providers</h1>
+  <a class="btn blue" href="{{ url_for('admin.provider_new') }}">{{ macros.icon("plus") }} Ajouter un provider</a>
+</div>
+<table class="tbl">
+  <thead><tr><th>Nom</th><th>Endpoint</th><th>Régions</th><th>Comptes</th><th></th></tr></thead>
+  <tbody>
+  {% for provider in providers %}
+  {% set account_count = accounts | selectattr('provider_id', 'equalto', provider.id) | list | length %}
+    <tr>
+      <td>{{ macros.icon("globe") }} {{ provider.name }}</td>
+      <td class="mono">{{ provider.endpoint_template }}</td>
+      <td class="hint">{{ provider.regions | join(', ') if provider.regions else "—" }}</td>
+      <td class="hint">{{ account_count }}</td>
+      <td class="row-actions">
+        <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('admin.provider_edit', provider_id=provider.id) }}">{{ macros.icon("edit") }}</a>
+        <form method="post" action="{{ url_for('admin.provider_delete', provider_id=provider.id) }}"
+              onsubmit="return confirm('Supprimer le provider {{ provider.name }} ?');">
+          <button class="btn icon red sm" type="submit" title="Supprimer" {{ "disabled" if account_count else "" }}>{{ macros.icon("trash") }}</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="hint">Aucun provider configuré</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

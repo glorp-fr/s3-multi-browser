@@ -7,7 +7,10 @@ from . import storage
 
 def get_client(account):
     secret_key = storage.decrypt_secret(account["secret_key_enc"])
-    endpoint_url = f"https://oos.{account['region']}.outscale.com"
+    provider = storage.get_provider_by_id(account["provider_id"])
+    if not provider:
+        raise RuntimeError("Provider introuvable pour ce compte")
+    endpoint_url = provider["endpoint_template"].format(region=account["region"])
     return boto3.client(
         "s3",
         aws_access_key_id=account["access_key"],

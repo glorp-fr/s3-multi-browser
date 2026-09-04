@@ -1,17 +1,27 @@
 {% extends "base.html" %}
 {% block title %}{{ "Modifier" if account else "Ajouter" }} un compte — Admin{% endblock %}
 {% block content %}
-<a class="back-link" href="{{ url_for('admin.accounts') }}">&larr; Comptes OUTSCALE</a>
+<a class="back-link" href="{{ url_for('admin.accounts') }}">&larr; Comptes</a>
 <h1 class="stitle">{{ "Modifier le compte" if account else "Ajouter un compte" }}</h1>
-<form class="form-card" method="post">
+{% if not providers %}
+<p class="hint">Aucun provider configuré. <a href="{{ url_for('admin.provider_new') }}">Créez-en un d'abord</a>.</p>
+{% else %}
+<form class="form-card" method="post" id="account-form">
   <label>Nom
     <input type="text" name="name" value="{{ account.name if account else '' }}" required>
   </label>
-  <label>N° de compte OUTSCALE
+  <label>N° de compte
     <input type="text" name="account_number" value="{{ account.account_number if account else '' }}">
   </label>
-  <label>Région (ex : cloudgouv-eu-west-1, eu-west-2)
-    <input type="text" name="region" value="{{ account.region if account else '' }}" required>
+  <label>Provider
+    <select name="provider_id" id="provider_id" required>
+      {% for provider in providers %}
+      <option value="{{ provider.id }}" {{ "selected" if account and account.provider_id == provider.id else "" }}>{{ provider.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Région
+    <select name="region" id="region" required></select>
   </label>
   <label>Access Key
     <input type="text" name="access_key" class="mono" value="{{ account.access_key if account else '' }}" required>
@@ -21,4 +31,32 @@
   </label>
   <button class="btn blue" type="submit">Enregistrer</button>
 </form>
+
+<script>
+const PROVIDER_REGIONS = {
+  {% for provider in providers %}"{{ provider.id }}": {{ provider.regions | tojson }},{% endfor %}
+};
+const currentRegion = {{ (account.region if account else "") | tojson }};
+const providerSelect = document.getElementById('provider_id');
+const regionSelect = document.getElementById('region');
+
+function refreshRegions() {
+  const regions = PROVIDER_REGIONS[providerSelect.value] || [];
+  const keepCurrent = regionSelect.dataset.initial === "1";
+  regionSelect.innerHTML = "";
+  regions.forEach(function (r) {
+    const opt = document.createElement('option');
+    opt.value = r;
+    opt.textContent = r;
+    if (keepCurrent && r === currentRegion) opt.selected = true;
+    regionSelect.appendChild(opt);
+  });
+  regionSelect.dataset.initial = "0";
+}
+
+regionSelect.dataset.initial = "1";
+providerSelect.addEventListener('change', refreshRegions);
+refreshRegions();
+</script>
+{% endif %}
 {% endblock %}
