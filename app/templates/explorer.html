@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}{{ bucket }} — {{ account.name }}{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('explorer.buckets', account_id=account.id) }}">&larr; Buckets ({{ account.name }})</a>
+<h1 class="stitle mono">
+  <a href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket) }}">{{ bucket }}</a>
+  {% for name, full_prefix in breadcrumbs %}
+    / <a href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=full_prefix) }}">{{ name }}</a>
+  {% endfor %}
+</h1>
+
+{% if can_write %}
+<div class="toolbar">
+  <form class="inline-form" method="post" action="{{ url_for('explorer.upload', account_id=account.id, bucket=bucket) }}" enctype="multipart/form-data">
+    <input type="hidden" name="prefix" value="{{ prefix }}">
+    <input type="file" name="files" multiple required>
+    <button class="btn blue sm" type="submit">{{ macros.icon("plus") }} Envoyer</button>
+  </form>
+  <form class="inline-form" method="post" action="{{ url_for('explorer.mkdir', account_id=account.id, bucket=bucket) }}">
+    <input type="hidden" name="prefix" value="{{ prefix }}">
+    <input type="text" name="name" placeholder="nouveau-dossier" required>
+    <button class="btn ghost sm" type="submit">{{ macros.icon("folder") }} Nouveau dossier</button>
+  </form>
+</div>
+{% endif %}
+
+<table class="tbl">
+  <thead><tr><th>Nom</th><th>Taille</th><th>Modifié</th><th></th></tr></thead>
+  <tbody>
+  {% for folder in folders %}
+    <tr>
+      <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=folder.prefix) }}">{{ macros.icon("folder") }} {{ folder.name }}</a></td>
+      <td class="hint">—</td>
+      <td class="hint">—</td>
+      <td class="row-actions">
+        {% if can_write %}
+        <form method="post" action="{{ url_for('explorer.delete_object', account_id=account.id, bucket=bucket) }}"
+              onsubmit="return confirm('Supprimer le dossier {{ folder.name }} et tout son contenu ?');">
+          <input type="hidden" name="key" value="{{ folder.prefix }}">
+          <input type="hidden" name="prefix" value="{{ prefix }}">
+          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  {% for obj in files %}
+    <tr>
+      <td>{{ macros.icon("file") }} {{ obj.name }}</td>
+      <td class="mono">{{ obj.size }}</td>
+      <td class="mono">{{ obj.last_modified }}</td>
+      <td class="row-actions">
+        <a class="btn icon ghost sm" title="Télécharger" href="{{ url_for('explorer.download', account_id=account.id, bucket=bucket, key=obj.key) }}">{{ macros.icon("download") }}</a>
+        {% if can_write %}
+        <form method="post" action="{{ url_for('explorer.delete_object', account_id=account.id, bucket=bucket) }}"
+              onsubmit="return confirm('Supprimer {{ obj.key }} ?');">
+          <input type="hidden" name="key" value="{{ obj.key }}">
+          <input type="hidden" name="prefix" value="{{ prefix }}">
+          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    {% if not folders %}
+    <tr><td colspan="4" class="hint">Ce dossier est vide</td></tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

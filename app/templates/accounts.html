@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Comptes — OOS Viewer{% endblock %}
+{% block content %}
+<h1 class="stitle">Comptes OUTSCALE</h1>
+{% if not accounts %}
+<p class="hint">Aucun compte accessible. Contactez un administrateur.</p>
+{% else %}
+<div class="card-grid">
+  {% for account in accounts %}
+  <a class="card account-card" href="{{ url_for('explorer.buckets', account_id=account.id) }}">
+    <div class="account-card-name">{{ account.name }}</div>
+    <div class="mono hint">{{ account.account_number or "—" }} · {{ account.region }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

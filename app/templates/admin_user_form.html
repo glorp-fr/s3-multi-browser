@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ "Modifier" if user else "Ajouter" }} un utilisateur — Admin{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('admin.users') }}">&larr; Utilisateurs</a>
+<h1 class="stitle">{{ "Modifier l'utilisateur" if user else "Ajouter un utilisateur" }}</h1>
+<form class="form-card" method="post">
+  <label>Nom d'utilisateur
+    <input type="text" name="username" value="{{ user.username if user else '' }}" required>
+  </label>
+  <label>Mot de passe {% if user %}<span class="hint">(laisser vide pour ne pas modifier)</span>{% endif %}
+    <input type="password" name="password" autocomplete="new-password" {{ "required" if not user else "" }}>
+  </label>
+  <label>Rôle
+    <select name="role" required>
+      {% for role in roles %}
+      <option value="{{ role }}" {{ "selected" if user and user.role == role else "" }}>{{ role }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <fieldset>
+    <legend>Accès aux comptes</legend>
+    <label class="checkbox-row">
+      <input type="checkbox" name="all_accounts" id="all_accounts"
+             {{ "checked" if user and user.account_ids == "*" else "" }}>
+      Tous les comptes (actuels et futurs)
+    </label>
+    <div class="account-checks">
+      {% for account in accounts %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="account_ids" value="{{ account.id }}"
+               {{ "checked" if user and user.account_ids != "*" and account.id in (user.account_ids or []) else "" }}>
+        {{ account.name }}
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+<script>
+document.getElementById('all_accounts').addEventListener('change', function () {
+  document.querySelectorAll('input[name="account_ids"]').forEach(function (cb) {
+    cb.disabled = document.getElementById('all_accounts').checked;
+  });
+});
+document.getElementById('all_accounts').dispatchEvent(new Event('change'));
+</script>
+{% endblock %}

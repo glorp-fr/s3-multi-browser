@@ -1,0 +1,16 @@
+services:
+  oos-viewer:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      APP_MASTER_KEY: "${APP_MASTER_KEY}"
+      FLASK_SECRET_KEY: "${FLASK_SECRET_KEY}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+    volumes:
+      - oos-viewer-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  oos-viewer-data:

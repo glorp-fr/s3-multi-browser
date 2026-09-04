@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}{{ account.name }} — Buckets{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('explorer.accounts') }}">&larr; Comptes</a>
+<h1 class="stitle">{{ account.name }} <span class="hint mono">({{ account.region }})</span></h1>
+
+{% if can_write %}
+<form class="inline-form" method="post" action="{{ url_for('explorer.bucket_new', account_id=account.id) }}">
+  <input type="text" name="name" placeholder="nom-du-bucket" required pattern="[a-z0-9.\-]{3,63}">
+  <button class="btn blue sm" type="submit">{{ macros.icon("plus") }} Créer un bucket</button>
+</form>
+{% endif %}
+
+<table class="tbl">
+  <thead><tr><th>Bucket</th><th>Créé le</th><th></th></tr></thead>
+  <tbody>
+  {% for b in buckets %}
+    <tr>
+      <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=b.Name) }}">{{ macros.icon("box") }} {{ b.Name }}</a></td>
+      <td class="mono">{{ b.CreationDate }}</td>
+      <td class="row-actions">
+        {% if can_write %}
+        <form method="post" action="{{ url_for('explorer.bucket_delete', account_id=account.id, bucket=b.Name) }}"
+              onsubmit="return confirm('Supprimer le bucket {{ b.Name }} ?');">
+          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="hint">Aucun bucket</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

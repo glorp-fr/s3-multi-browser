@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ "Modifier" if account else "Ajouter" }} un compte — Admin{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('admin.accounts') }}">&larr; Comptes OUTSCALE</a>
+<h1 class="stitle">{{ "Modifier le compte" if account else "Ajouter un compte" }}</h1>
+<form class="form-card" method="post">
+  <label>Nom
+    <input type="text" name="name" value="{{ account.name if account else '' }}" required>
+  </label>
+  <label>N° de compte OUTSCALE
+    <input type="text" name="account_number" value="{{ account.account_number if account else '' }}">
+  </label>
+  <label>Région (ex : cloudgouv-eu-west-1, eu-west-2)
+    <input type="text" name="region" value="{{ account.region if account else '' }}" required>
+  </label>
+  <label>Access Key
+    <input type="text" name="access_key" class="mono" value="{{ account.access_key if account else '' }}" required>
+  </label>
+  <label>Secret Key {% if account %}<span class="hint">(laisser vide pour ne pas modifier)</span>{% endif %}
+    <input type="password" name="secret_key" class="mono" autocomplete="new-password" {{ "required" if not account else "" }}>
+  </label>
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+{% endblock %}

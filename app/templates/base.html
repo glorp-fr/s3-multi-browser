@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}OOS Viewer{% endblock %}</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Open+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="icon" href="{{ url_for('static', filename='assets/favicon.png') }}">
+</head>
+<body>
+{% import "_macros.html" as macros %}
+{% if current_user %}
+<header class="hdr">
+  <img src="{{ url_for('static', filename='assets/logo.png') }}" alt="OOS Viewer" height="36">
+  <span class="hdr-title">OOS Viewer</span>
+  <div class="hdr-spacer"></div>
+  <span class="mono hdr-user">{{ current_user.username }}</span>
+  <span class="bdg {{ current_user.role }}">{{ current_user.role }}</span>
+  <form method="post" action="{{ url_for('auth.logout') }}">
+    <button class="btn icon ghost" type="submit" title="Déconnexion">{{ macros.icon("log-out") }}</button>
+  </form>
+</header>
+<div class="shell">
+  <nav class="sidebar">
+    <a class="navlink" href="{{ url_for('explorer.accounts') }}">{{ macros.icon("box") }} Comptes</a>
+    {% if current_user.role == "admin" %}
+    <div class="nav-sep">Administration</div>
+    <a class="navlink" href="{{ url_for('admin.accounts') }}">{{ macros.icon("shield") }} Comptes OUTSCALE</a>
+    <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
+    {% endif %}
+  </nav>
+  <main class="content{% block content_wide %}{% endblock %}">
+    {% include "_flash.html" %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+<main class="content login-shell">
+  {% include "_flash.html" %}
+  {% block bare_content %}{% endblock %}
+</main>
+{% endif %}
+</body>
+</html>

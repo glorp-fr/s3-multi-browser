@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Comptes OUTSCALE — Admin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="stitle">Comptes OUTSCALE</h1>
+  <a class="btn blue" href="{{ url_for('admin.account_new') }}">{{ macros.icon("plus") }} Ajouter un compte</a>
+</div>
+<table class="tbl">
+  <thead><tr><th>Nom</th><th>N° de compte</th><th>Région</th><th>Access Key</th><th></th></tr></thead>
+  <tbody>
+  {% for account in accounts %}
+    <tr>
+      <td>{{ account.name }}</td>
+      <td class="mono">{{ account.account_number or "—" }}</td>
+      <td class="mono">{{ account.region }}</td>
+      <td class="mono">{{ account.access_key }}</td>
+      <td class="row-actions">
+        <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('admin.account_edit', account_id=account.id) }}">{{ macros.icon("edit") }}</a>
+        <form method="post" action="{{ url_for('admin.account_delete', account_id=account.id) }}"
+              onsubmit="return confirm('Supprimer le compte {{ account.name }} ?');">
+          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="hint">Aucun compte configuré</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

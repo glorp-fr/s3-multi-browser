@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Connexion — OOS Viewer{% endblock %}
+{% block bare_content %}
+<div class="login-card">
+  <img src="{{ url_for('static', filename='assets/logo.png') }}" alt="OOS Viewer" height="60">
+  <h1 class="stitle">OOS Viewer</h1>
+  <form method="post">
+    <label>Nom d'utilisateur
+      <input type="text" name="username" autofocus required>
+    </label>
+    <label>Mot de passe
+      <input type="password" name="password" required>
+    </label>
+    <button class="btn blue" type="submit">Se connecter</button>
+  </form>
+</div>
+{% endblock %}
