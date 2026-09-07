@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Logs — Admin{% endblock %}
+{% block content_wide %} wide{% endblock %}
+
+{% macro logline(r) -%}
+<div class="log-line {{ r.status }}" data-seq="{{ r.seq }}">
+  <span class="lg-ts">{{ r.ts[:19] | replace("T", " ") }}</span>
+  <span class="lg-cat cat-{{ r.category }}">{{ r.category }}</span>
+  <span class="lg-actor">{{ r.actor }}</span>
+  <span class="lg-ip">{{ r.ip or "" }}</span>
+  <span class="lg-msg">{{ r.message }}</span>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<h1 class="stitle">Logs</h1>
+
+<div class="tabs" role="tablist">
+  <button class="tab is-active" type="button" data-tab="live">Journal applicatif</button>
+  <button class="tab" type="button" data-tab="conn">Historique des connexions</button>
+</div>
+
+<section class="tabpane" data-pane="live">
+  <div class="log-toolbar">
+    <div class="inline-form">
+      {{ macros.icon("search") }}
+      <input type="text" id="log-search" placeholder="Rechercher (message, utilisateur, IP, bucket…)" autocomplete="off">
+    </div>
+    <div class="log-cats">
+      {% for c in categories %}
+      <label class="checkbox-row"><input type="checkbox" class="log-cat" value="{{ c }}" checked> {{ c }}</label>
+      {% endfor %}
+    </div>
+    <button class="btn sm" id="log-pause" type="button">{{ macros.icon("pause") }} <span>Pause</span></button>
+    <span class="hint" id="log-status">● en direct</span>
+  </div>
+
+  <div class="log-view mono" id="log-view" data-last-seq="{{ last_seq }}">
+    {% for r in recent %}{{ logline(r) }}{% endfor %}
+  </div>
+  <p class="hint">Nouvelles lignes ajoutées en bas toutes les 3 s. « Pause » fige l'affichage.</p>
+</section>
+
+<section class="tabpane" data-pane="conn" hidden>
+  <form class="inline-form" method="get" action="{{ url_for('admin.logs') }}" style="margin-bottom:14px">
+    <input type="hidden" name="tab" value="conn">
+    {{ macros.icon("search") }}
+    <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="Filtrer (utilisateur, IP…)">
+    <button class="btn sm" type="submit">Filtrer</button>
+    {% if request.args.get('q') %}<a class="btn sm ghost" href="{{ url_for('admin.logs', tab='conn') }}">Effacer</a>{% endif %}
+  </form>
+  <table class="tbl">
+    <thead><tr><th>Date (UTC)</th><th>Utilisateur</th><th>IP</th><th>Résultat</th><th>Événement</th><th>User-Agent</th></tr></thead>
+    <tbody>
+    {% for r in history %}
+      <tr>
+        <td class="mono">{{ r.ts[:19] | replace("T", " ") }}</td>
+        <td>{{ r.actor }}</td>
+        <td class="mono">{{ r.ip or "" }}</td>
+        <td><span class="bdg {{ 'success' if r.status == 'ok' else 'error' }}">{{ 'OK' if r.status == 'ok' else 'Échec' }}</span></td>
+        <td class="hint">{{ r.action }}</td>
+        <td class="hint" title="{{ r.user_agent or '' }}">{{ (r.user_agent or '')[:70] }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="hint">Aucune connexion enregistrée</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<script>
+(function () {
+  var view = document.getElementById("log-view");
+  var search = document.getElementById("log-search");
+  var pauseBtn = document.getElementById("log-pause");
+  var statusEl = document.getElementById("log-status");
+  var cats = Array.prototype.slice.call(document.querySelectorAll(".log-cat"));
+  var lastSeq = parseInt(view.getAttribute("data-last-seq"), 10) || 0;
+  var paused = false;
+  var timer = null;
+
+  function selectedCats() {
+    return cats.filter(function (c) { return c.checked; }).map(function (c) { return c.value; });
+  }
+
+  function atBottom() {
+    return view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+  }
+
+  function makeLine(r) {
+    var row = document.createElement("div");
+    row.className = "log-line " + (r.status || "ok");
+    row.setAttribute("data-seq", r.seq);
+    var cells = [
+      ["lg-ts", (r.ts || "").slice(0, 19).replace("T", " ")],
+      ["lg-cat cat-" + (r.category || ""), r.category || ""],
+      ["lg-actor", r.actor || ""],
+      ["lg-ip", r.ip || ""],
+      ["lg-msg", r.message || ""],
+    ];
+    cells.forEach(function (c) {
+      var span = document.createElement("span");
+      span.className = c[0];
+      span.textContent = c[1];   // textContent: no HTML injection from log content
+      row.appendChild(span);
+    });
+    return row;
+  }
+
+  function query(extra) {
+    var p = new URLSearchParams();
+    var q = search.value.trim();
+    if (q) p.set("q", q);
+    var c = selectedCats();
+    if (c.length && c.length < cats.length) p.set("cat", c.join(","));
+    if (extra && extra.after != null) p.set("after", extra.after);
+    return p.toString();
+  }
+
+  function fetchTail(reset) {
+    var url = "{{ url_for('admin.logs_tail') }}?" + query(reset ? {} : { after: lastSeq });
+    fetch(url, { headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (reset) view.innerHTML = "";
+        var stick = atBottom();
+        (data.records || []).forEach(function (rec) { view.appendChild(makeLine(rec)); });
+        lastSeq = data.last_seq != null ? data.last_seq : lastSeq;
+        if (stick || reset) view.scrollTop = view.scrollHeight;
+      })
+      .catch(function () { /* transient network error — next tick retries */ });
+  }
+
+  function reload() { fetchTail(true); }
+
+  function tick() { if (!paused) fetchTail(false); }
+
+  function setPaused(v) {
+    paused = v;
+    pauseBtn.querySelector("span").textContent = paused ? "Reprendre" : "Pause";
+    statusEl.textContent = paused ? "❚❚ en pause" : "● en direct";
+    statusEl.classList.toggle("is-paused", paused);
+    if (!paused) tick();
+  }
+
+  pauseBtn.addEventListener("click", function () { setPaused(!paused); });
+
+  var debounce;
+  search.addEventListener("input", function () {
+    clearTimeout(debounce);
+    debounce = setTimeout(reload, 300);
+  });
+  cats.forEach(function (c) { c.addEventListener("change", reload); });
+
+  // Tabs
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  var panes = Array.prototype.slice.call(document.querySelectorAll(".tabpane"));
+  function showTab(name) {
+    tabs.forEach(function (t) { t.classList.toggle("is-active", t.getAttribute("data-tab") === name); });
+    panes.forEach(function (p) { p.hidden = p.getAttribute("data-pane") !== name; });
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () { showTab(t.getAttribute("data-tab")); });
+  });
+  if (new URLSearchParams(location.search).get("tab") === "conn") showTab("conn");
+
+  view.scrollTop = view.scrollHeight;
+  timer = setInterval(tick, 3000);
+})();
+</script>
+{% endblock %}

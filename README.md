@@ -20,6 +20,12 @@ chiffré côté serveur.
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
+- **Logs** (`Administration → Logs`) : journal d'audit de toutes les actions — connexions/déconnexions
+  et échecs de connexion, actions S3 en lecture (listing, navigation, téléchargement) et en écriture
+  (upload, création/suppression de bucket, dossier, objet), CRUD admin. Vue **temps réel** (rafraîchie
+  toutes les 3 s) avec recherche, filtre par catégorie et bouton **Pause**, plus un onglet **historique
+  des connexions**. Aucun secret ni mot de passe n'est journalisé. Stocké dans `data/audit.jsonl`
+  (JSON Lines, plafonné à 5 Mo puis une rotation `.1`).
 
 ## Configuration (variables d'environnement)
 
@@ -28,7 +34,7 @@ chiffré côté serveur.
 | `APP_MASTER_KEY` | oui | Clé utilisée pour chiffrer les Secret Keys des comptes en base. À générer une fois et à garder stable (sa perte rend les comptes existants illisibles). |
 | `FLASK_SECRET_KEY` | recommandé | Clé de signature des sessions Flask. Par défaut réutilise `APP_MASTER_KEY`. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | au premier démarrage | Crée le premier compte admin si aucun utilisateur n'existe encore. |
-| `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json` et `usage_cache.json` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
+| `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json`, `usage_cache.json` et `audit.jsonl` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
 | `MAX_UPLOAD_MB` | non | Taille max d'upload en Mo (défaut : 512). |
 
 ## Lancer en local
@@ -68,10 +74,10 @@ docker compose up --build
 
 ## Notes techniques
 
-- Le stockage (`data/db.json`, `data/usage_cache.json`) n'est pas une base de données : ce sont des
-  fichiers protégés par un verrou process-local. L'image tourne donc avec **un seul worker gunicorn**
-  (multi-threadé) pour éviter toute écriture concurrente entre plusieurs process — largement suffisant
-  pour un usage interne.
+- Le stockage (`data/db.json`, `data/usage_cache.json`, `data/audit.jsonl`) n'est pas une base de
+  données : ce sont des fichiers protégés par un verrou process-local. L'image tourne donc avec **un
+  seul worker gunicorn** (multi-threadé) pour éviter toute écriture concurrente entre plusieurs
+  process — largement suffisant pour un usage interne.
 - Le client S3 utilise `boto3` avec un `endpoint_url` construit depuis le template du provider
   (`https://oos.{region}.outscale.com` pour Outscale, `https://s3.{region}.amazonaws.com` pour AWS, etc.).
 - Aucun secret n'est jamais renvoyé au navigateur : la Secret Key saisie à la création d'un compte n'est

@@ -29,6 +29,7 @@
     <a class="navlink" href="{{ url_for('admin.providers') }}">{{ macros.icon("globe") }} Providers</a>
     <a class="navlink" href="{{ url_for('admin.accounts') }}">{{ macros.icon("shield") }} Comptes</a>
     <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
+    <a class="navlink" href="{{ url_for('admin.logs') }}">{{ macros.icon("activity") }} Logs</a>
     {% endif %}
   </nav>
   <main class="content{% block content_wide %}{% endblock %}">

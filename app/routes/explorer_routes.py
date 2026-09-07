@@ -6,7 +6,7 @@ from flask import (
     request, send_file, url_for,
 )
 
-from .. import storage, usage_cache
+from .. import audit, storage, usage_cache
 from ..auth import accessible_accounts, can_access_account, can_write, login_required
 from ..s3client import get_client
 
@@ -89,6 +89,12 @@ def buckets(account_id):
         flash(f"Erreur OOS : {exc}", "error")
         bucket_list = []
 
+    audit.log(
+        "s3_read", "list_buckets",
+        f"Listing des buckets — compte « {account['name']} » ({len(bucket_list)} bucket(s))",
+        target=account["name"],
+    )
+
     buckets_view = []
     for b in bucket_list:
         entry = usage_cache.get(account_id, b["Name"])
@@ -121,8 +127,14 @@ def bucket_new(account_id):
     try:
         client.create_bucket(Bucket=name)
         flash(f"Bucket « {name} » créé", "success")
+        audit.log("s3_write", "create_bucket",
+                  f"Bucket « {name} » créé — compte « {account['name']} »",
+                  target=f"{account['name']}/{name}")
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
+        audit.log("s3_write", "create_bucket",
+                  f"Échec création bucket « {name} » — compte « {account['name']} » : {exc}",
+                  target=f"{account['name']}/{name}", status="fail")
     return redirect(url_for("explorer.buckets", account_id=account_id))
 
 
@@ -136,8 +148,14 @@ def bucket_delete(account_id, bucket):
     try:
         client.delete_bucket(Bucket=bucket)
         flash(f"Bucket « {bucket} » supprimé", "success")
+        audit.log("s3_write", "delete_bucket",
+                  f"Bucket « {bucket} » supprimé — compte « {account['name']} »",
+                  target=f"{account['name']}/{bucket}")
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
+        audit.log("s3_write", "delete_bucket",
+                  f"Échec suppression bucket « {bucket} » — compte « {account['name']} » : {exc}",
+                  target=f"{account['name']}/{bucket}", status="fail")
     return redirect(url_for("explorer.buckets", account_id=account_id))
 
 
@@ -160,6 +178,10 @@ def bucket_usage_refresh(account_id, bucket):
     try:
         size_bytes, object_count = usage_cache.compute_bucket_usage(client, bucket)
         usage_cache.set(account_id, bucket, size_bytes, object_count)
+        audit.log("s3_read", "usage_refresh",
+                  f"Volumétrie recalculée — {account['name']}/{bucket} : "
+                  f"{usage_cache.format_size(size_bytes)} ({object_count} objets)",
+                  target=f"{account['name']}/{bucket}")
         flash(
             f"Volumétrie de « {bucket} » mise à jour : "
             f"{usage_cache.format_size(size_bytes)} ({object_count} objets)",
@@ -216,6 +238,13 @@ def objects(account_id, bucket):
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
 
+    audit.log(
+        "s3_read", "list_objects",
+        f"Navigation — {account['name']}/{bucket}/{prefix}"
+        + (f" (recherche « {query} »)" if query else ""),
+        target=f"{account['name']}/{bucket}/{prefix}",
+    )
+
     total_files = len(files)
     total_pages = max(1, -(-total_files // per_page))
     page = min(page, total_pages)
@@ -256,8 +285,14 @@ def upload(account_id, bucket):
             uploaded += 1
         except ClientError as exc:
             flash(f"Erreur lors de l'upload de {file.filename} : {exc}", "error")
+            audit.log("s3_write", "upload",
+                      f"Échec upload « {file.filename} » — {account['name']}/{bucket}/{prefix} : {exc}",
+                      target=f"{account['name']}/{bucket}/{key}", status="fail")
     if uploaded:
         flash(f"{uploaded} fichier(s) envoyé(s)", "success")
+        audit.log("s3_write", "upload",
+                  f"{uploaded} fichier(s) envoyé(s) — {account['name']}/{bucket}/{prefix}",
+                  target=f"{account['name']}/{bucket}/{prefix}")
     return redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket, prefix=prefix))
 
 
@@ -276,8 +311,14 @@ def mkdir(account_id, bucket):
     try:
         client.put_object(Bucket=bucket, Key=f"{prefix}{name}/", Body=b"")
         flash("Dossier créé", "success")
+        audit.log("s3_write", "mkdir",
+                  f"Dossier « {name} » créé — {account['name']}/{bucket}/{prefix}",
+                  target=f"{account['name']}/{bucket}/{prefix}{name}/")
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
+        audit.log("s3_write", "mkdir",
+                  f"Échec création dossier « {name} » — {account['name']}/{bucket}/{prefix} : {exc}",
+                  target=f"{account['name']}/{bucket}/{prefix}{name}/", status="fail")
     return redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket, prefix=prefix))
 
 
@@ -292,6 +333,9 @@ def download(account_id, bucket):
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
         return redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket))
+    audit.log("s3_read", "download",
+              f"Téléchargement — {account['name']}/{bucket}/{key}",
+              target=f"{account['name']}/{bucket}/{key}")
     filename = key.rsplit("/", 1)[-1] or key
     return send_file(
         io.BytesIO(obj["Body"].read()),
@@ -310,8 +354,11 @@ def delete_object(account_id, bucket):
     key = request.form.get("key", "")
     prefix = request.form.get("prefix", "")
     client = get_client(account)
+    is_folder = key.endswith("/")
+    action = "delete_folder" if is_folder else "delete_object"
+    kind = "Dossier" if is_folder else "Objet"
     try:
-        if key.endswith("/"):
+        if is_folder:
             # "Folder": delete every object under this prefix.
             paginator = client.get_paginator("list_objects_v2")
             to_delete = []
@@ -319,9 +366,17 @@ def delete_object(account_id, bucket):
                 to_delete.extend({"Key": o["Key"]} for o in page.get("Contents", []))
             for i in range(0, len(to_delete), 1000):
                 client.delete_objects(Bucket=bucket, Delete={"Objects": to_delete[i:i + 1000]})
+            detail = f" ({len(to_delete)} objet(s))"
         else:
             client.delete_object(Bucket=bucket, Key=key)
+            detail = ""
         flash("Suppression effectuée", "success")
+        audit.log("s3_write", action,
+                  f"{kind} supprimé — {account['name']}/{bucket}/{key}{detail}",
+                  target=f"{account['name']}/{bucket}/{key}")
     except ClientError as exc:
         flash(f"Erreur OOS : {exc}", "error")
+        audit.log("s3_write", action,
+                  f"Échec suppression — {account['name']}/{bucket}/{key} : {exc}",
+                  target=f"{account['name']}/{bucket}/{key}", status="fail")
     return redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket, prefix=prefix))

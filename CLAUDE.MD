@@ -58,6 +58,49 @@ Renommage complet du produit (aucun déploiement en place ni dépôt GitHub, don
 > Historique du 1er renommage (OOS Viewer → S3 Viewer) : le produit n'est plus limité à Outscale,
 > il gère plusieurs **providers** S3-compatibles (Outscale, AWS, custom).
 
+### Application de SECURITE.MD — Module « Logs »
+
+`SECURITE.MD` (à la racine de `~/claude`) décrit un socle de modules attendus pour toute app.
+Application **module par module** ; premier module livré : **Logs**.
+
+- **Journal d'audit** : `app/audit.py` — fichier **JSON Lines** append-only `data/audit.jsonl`
+  (même esprit que `storage.py` / `usage_cache.py` : `threading.Lock` + fichiers simples, pas de
+  base). Chaque événement porte un `seq` entier strictement croissant (curseur pour le live tail),
+  l'horodatage UTC, la catégorie, l'action, l'acteur, l'IP (`X-Forwarded-For` en best-effort — pas
+  encore de `ProxyFix`), le user-agent, le `status` (`ok`/`fail`) et une cible. Fichier **plafonné
+  à 5 Mo** puis **une** rotation (`audit.jsonl.1`). `audit.log(...)` n'échoue jamais (le logging ne
+  doit pas casser une requête). **Aucun secret ni mot de passe** n'est journalisé (vérifié par test).
+- **Catégories journalisées** (choix validé avec l'utilisateur) :
+  - `auth` — connexions, déconnexions, **échecs** de connexion (login + IP + user-agent).
+  - `s3_write` — création/suppression de bucket, upload, mkdir, suppression objet/dossier
+    (succès **et** échecs `ClientError`).
+  - `s3_read` — listing buckets, navigation dans un bucket (+ terme de recherche), téléchargement,
+    recalcul de volumétrie.
+  - `admin` — CRUD providers / comptes S3 / utilisateurs (jamais le contenu des secrets/mdp, juste
+    « Secret Key changée » / « mot de passe changé »).
+- **Page `Administration → Logs`** (`/admin/logs`, `admin_logs.html`, lien sidebar icône `activity`) :
+  - Onglet **« Journal applicatif »** : vue temps réel (`<div id="log-view">`), polling JS toutes
+    les **3 s** de `GET /admin/logs/tail?after=<seq>&q=<recherche>&cat=<csv>` (JSON
+    `{records, last_seq}`), lignes ajoutées en bas, auto-scroll seulement si déjà en bas. Champ de
+    **recherche** (sous-chaîne, debounce 300 ms, filtrée côté serveur), cases à cocher de **filtre
+    par catégorie**, bouton **Pause / Reprendre** qui fige l'affichage (= « bouton pour stopper le
+    défilement » de SECURITE.MD). Rendu des lignes JS en `textContent` (pas d'injection HTML depuis
+    le contenu des logs).
+  - Onglet **« Historique des connexions »** : table server-rendered des événements `auth`
+    (date, utilisateur, IP, résultat, événement, user-agent) avec son propre champ de filtre
+    (`?q=`, rechargement page, `?tab=conn` pour rouvrir l'onglet).
+- **Icônes** ajoutées à `_macros.html` : `activity`, `pause`.
+- **Tests** (scripts client de test Flask + S3 mocké, non versionnés) : écriture/lecture/curseur
+  `audit`, login OK/KO + logout journalisés, page `/admin/logs` + endpoint `tail` (filtres `q` et
+  `cat`), CRUD admin audité, et instrumentation S3 (buckets/objects/download/create/mkdir/upload/
+  delete objet+dossier/delete bucket) — plus vérif qu'aucun secret ne fuit dans les logs.
+
+**Reste à appliquer de SECURITE.MD** (dans l'ordre convenu) : couche **groupes** (un groupe porte
+un rôle + une liste de comptes S3 ; utilisateurs rattachés à des groupes), **HTTPS / Let's Encrypt**
+(approche non tranchée : Caddy dans le compose vs TLS géré en amont), **désactivation de compte**
+(vs suppression), **gestion de version + bouton de mise à jour**, **module de sauvegarde de
+configuration** (SMB / S3, planification, rétention).
+
 ### Étape 1 — Scaffold initial (voir commit `72418ff`)
 
 Stack retenue : **Python 3 + Flask**, templates Jinja2 server-rendered, CSS pur (pas de framework
@@ -141,15 +184,18 @@ JS, pas de build step) — cohérent avec la contrainte "techno très light, pas
 app/
   storage.py          # JSON db (users/accounts/providers), chiffrement Fernet, migrate()
   usage_cache.py       # cache volumétrie (data/usage_cache.json), règle des 24h, format_size()
+  audit.py             # journal d'audit JSONL (data/audit.jsonl), log() / tail() / connection_history()
   s3client.py           # boto3 client, endpoint = provider.endpoint_template.format(region=...)
   auth.py                # session, login_required, role_required, can_write, accessible_accounts
   routes/
-    auth_routes.py       # /login /logout
-    admin_routes.py       # /admin/providers, /admin/accounts, /admin/users (CRUD)
-    explorer_routes.py     # /accounts, buckets, objets, upload/download/delete, usage/refresh
+    auth_routes.py       # /login /logout  (+ audit auth)
+    admin_routes.py       # /admin/providers, /admin/accounts, /admin/users (CRUD, audités)
+                          #   + /admin/logs (page) et /admin/logs/tail (JSON live tail)
+    explorer_routes.py     # /accounts, buckets, objets, upload/download/delete, usage/refresh (audités)
   templates/             # Jinja2, un template par page + _macros.html (icônes SVG inline)
-  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD
-data/                   # gitignored — db.json (chiffré) + usage_cache.json, créés au runtime
+                          #   admin_logs.html : onglets journal live + historique connexions
+  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs)
+data/                   # gitignored — db.json (chiffré) + usage_cache.json + audit.jsonl(.1), au runtime
 ```
 
 ## Déploiement / validation
