@@ -9,7 +9,11 @@ from hashlib import sha256
 from cryptography.fernet import Fernet, InvalidToken
 from werkzeug.security import check_password_hash, generate_password_hash
 
-DATA_DIR = os.environ.get("OOS_VIEWER_DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+DATA_DIR = (
+    os.environ.get("MULTI_S3_BROWSER_DATA_DIR")
+    or os.environ.get("OOS_VIEWER_DATA_DIR")  # ancien nom, gardé pour compat
+    or os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+)
 DB_PATH = os.path.join(DATA_DIR, "db.json")
 
 _lock = threading.Lock()

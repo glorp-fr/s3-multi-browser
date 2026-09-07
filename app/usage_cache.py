@@ -9,7 +9,11 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 
-DATA_DIR = os.environ.get("OOS_VIEWER_DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+DATA_DIR = (
+    os.environ.get("MULTI_S3_BROWSER_DATA_DIR")
+    or os.environ.get("OOS_VIEWER_DATA_DIR")  # ancien nom, gardé pour compat
+    or os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+)
 CACHE_PATH = os.path.join(DATA_DIR, "usage_cache.json")
 
 MIN_REFRESH_INTERVAL = timedelta(hours=24)

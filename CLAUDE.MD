@@ -40,16 +40,23 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
-### Renommage : OOS Viewer → S3 Viewer
+### Renommage : S3 Viewer → Multi S3 Browser
 
-Le produit n'est plus limité à Outscale : il gère plusieurs **providers** S3-compatibles
-(Outscale, AWS, et tout autre custom). Le nom affiché dans l'UI (header, titre de page, login)
-est désormais **S3 Viewer**.
+Renommage complet du produit (aucun déploiement en place ni dépôt GitHub, donc rename propre) :
 
-> Note : le nom de dossier du repo (`oos-viewer`), le nom du dépôt git local, la variable
-> d'environnement `OOS_VIEWER_DATA_DIR` et le nom de volume Docker historique n'ont **pas** été
-> renommés, pour ne pas casser un déploiement déjà en place. À renommer explicitement si besoin
-> (dépôt GitHub pas encore créé à ce stade, donc c'est le bon moment pour le faire si souhaité).
+- **Nom affiché dans l'UI** : `Multi S3 Browser` (header, `<title>`, page de login, attributs `alt`
+  du logo) — templates `base.html`, `login.html`, `accounts.html`.
+- **Dossier du projet** : `projets/oos-viewer` → `projets/multi-s3-browser` (dépôt git local
+  déplacé avec, historique conservé, toujours pas de remote).
+- **Variable d'environnement** : `OOS_VIEWER_DATA_DIR` → `MULTI_S3_BROWSER_DATA_DIR`. L'ancien nom
+  reste accepté **en repli** dans `storage.py` et `usage_cache.py`
+  (`os.environ.get("MULTI_S3_BROWSER_DATA_DIR") or os.environ.get("OOS_VIEWER_DATA_DIR") or <défaut>`).
+- **Docker** : service `oos-viewer` → `multi-s3-browser`, volume `oos-viewer-data` →
+  `multi-s3-browser-data` (`docker-compose.yml`), `ENV` du `Dockerfile`, nom d'image dans le README
+  (`docker build -t multi-s3-browser .`).
+
+> Historique du 1er renommage (OOS Viewer → S3 Viewer) : le produit n'est plus limité à Outscale,
+> il gère plusieurs **providers** S3-compatibles (Outscale, AWS, custom).
 
 ### Étape 1 — Scaffold initial (voir commit `72418ff`)
 

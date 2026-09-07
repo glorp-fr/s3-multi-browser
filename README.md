@@ -1,4 +1,4 @@
-# S3 Viewer
+# Multi S3 Browser
 
 Interface web légère pour parcourir, uploader et supprimer des objets sur des stockages compatibles
 S3 (Outscale OOS, AWS S3, tout autre provider S3-compatible), avec gestion multi-provider,
@@ -28,7 +28,7 @@ chiffré côté serveur.
 | `APP_MASTER_KEY` | oui | Clé utilisée pour chiffrer les Secret Keys des comptes en base. À générer une fois et à garder stable (sa perte rend les comptes existants illisibles). |
 | `FLASK_SECRET_KEY` | recommandé | Clé de signature des sessions Flask. Par défaut réutilise `APP_MASTER_KEY`. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | au premier démarrage | Crée le premier compte admin si aucun utilisateur n'existe encore. |
-| `OOS_VIEWER_DATA_DIR` | non | Répertoire de stockage de `db.json` et `usage_cache.json` (défaut : `./data`). Nom historique conservé pour ne pas casser les déploiements existants. |
+| `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json` et `usage_cache.json` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
 | `MAX_UPLOAD_MB` | non | Taille max d'upload en Mo (défaut : 512). |
 
 ## Lancer en local
@@ -51,13 +51,13 @@ Outscale et AWS sont créés automatiquement au premier démarrage ; ajouter un 
 ## Lancer avec Docker
 
 ```bash
-docker build -t s3-viewer .
+docker build -t multi-s3-browser .
 docker run -p 5000:5000 \
   -e APP_MASTER_KEY="change-me" \
   -e ADMIN_USERNAME="admin" \
   -e ADMIN_PASSWORD="change-me-too" \
-  -v s3-viewer-data:/app/data \
-  s3-viewer
+  -v multi-s3-browser-data:/app/data \
+  multi-s3-browser
 ```
 
 Ou via `docker-compose.yml` (variables lues depuis un fichier `.env` local, non versionné) :

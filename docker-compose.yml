@@ -1,5 +1,5 @@
 services:
-  oos-viewer:
+  multi-s3-browser:
     build: .
     ports:
       - "5000:5000"
@@ -9,8 +9,8 @@ services:
       ADMIN_USERNAME: "${ADMIN_USERNAME}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
     volumes:
-      - oos-viewer-data:/app/data
+      - multi-s3-browser-data:/app/data
     restart: unless-stopped
 
 volumes:
-  oos-viewer-data:
+  multi-s3-browser-data:

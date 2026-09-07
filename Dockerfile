@@ -11,7 +11,7 @@ COPY wsgi.py .
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
-ENV OOS_VIEWER_DATA_DIR=/app/data
+ENV MULTI_S3_BROWSER_DATA_DIR=/app/data
 EXPOSE 5000
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "wsgi:app"]
