@@ -28,7 +28,7 @@ Fonctionnalités:
   - Possibilité d'action selon droits du user
 
 
-Chharte graphique détaillée dans le fichier CHATRE_GRAPHIQUE.MD ala racine du projet.
+Charte graphique détaillée dans `~/claude/CHARTE_GRAPHIQUE.md` (référence commune à toutes les apps).
 
 Stockage du produit:
 Upload vers le repos github qui sera créé pour l'occasion
@@ -40,7 +40,7 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
-### Application de SECURITE.MD — Module « Sauvegarde de configuration » — v0.7.x
+### Application de SECURITE.md — Module « Sauvegarde de configuration » — v0.7.x
 
 Livré depuis un **clone séparé** poussé sur GitHub, sans toucher au gunicorn en place :
 le but était de valider de bout en bout la détection de MAJ + le bouton *Mettre à jour* de
@@ -95,7 +95,7 @@ exactement les commandes du bouton : `git fetch --prune origin` puis
   sur endpoint invalide → échec gracieux enregistré (`last_status=fail`), SMB non configuré →
   message « incomplète ». Régression : smoke groups v0.6.0 rejoué OK.
 
-### Application de SECURITE.MD — Gestion des groupes (RBAC) — v0.6.0
+### Application de SECURITE.md — Gestion des groupes (RBAC) — v0.6.0
 
 Remplacement du modèle d'autorisation « rôle global + liste de comptes » par un modèle
 **groupes**. Choix validés avec l'utilisateur avant implémentation :
@@ -167,9 +167,9 @@ Renommage complet du produit (aucun déploiement en place ni dépôt GitHub, don
 > Historique du 1er renommage (OOS Viewer → S3 Viewer) : le produit n'est plus limité à Outscale,
 > il gère plusieurs **providers** S3-compatibles (Outscale, AWS, custom).
 
-### Application de SECURITE.MD — Module « Logs »
+### Application de SECURITE.md — Module « Logs »
 
-`SECURITE.MD` (à la racine de `~/claude`) décrit un socle de modules attendus pour toute app.
+`SECURITE.md` (à la racine de `~/claude`) décrit un socle de modules attendus pour toute app.
 Application **module par module** ; premier module livré : **Logs**.
 
 - **Journal d'audit** : `app/audit.py` — fichier **JSON Lines** append-only `data/audit.jsonl`
@@ -193,7 +193,7 @@ Application **module par module** ; premier module livré : **Logs**.
     `{records, last_seq}`), lignes ajoutées en bas, auto-scroll seulement si déjà en bas. Champ de
     **recherche** (sous-chaîne, debounce 300 ms, filtrée côté serveur), cases à cocher de **filtre
     par catégorie**, bouton **Pause / Reprendre** qui fige l'affichage (= « bouton pour stopper le
-    défilement » de SECURITE.MD). Rendu des lignes JS en `textContent` (pas d'injection HTML depuis
+    défilement » de SECURITE.md). Rendu des lignes JS en `textContent` (pas d'injection HTML depuis
     le contenu des logs).
   - Onglet **« Historique des connexions »** : table server-rendered des événements `auth`
     (date, utilisateur, IP, résultat, événement, user-agent) avec son propre champ de filtre
@@ -237,7 +237,7 @@ au-dessus du tableau » (désactivés tant que rien n'est coché).
   + contenu vérifiés via `zipfile`), 403 pour `readonly` sur les deletes, `readonly` autorisé au
   `.zip`, sélection vide → erreur. Rendu des templates `buckets.html` / `explorer.html` re-vérifié.
 
-### Application de SECURITE.MD — Module « Version & mises à jour »
+### Application de SECURITE.md — Module « Version & mises à jour »
 
 Choix validés avec l'utilisateur : source de version = **fichier `VERSION`** (semver) + SHA git ;
 détection de MAJ = **dernier commit de la branche par défaut** sur GitHub ; bouton de MAJ =
@@ -263,7 +263,7 @@ détection de MAJ = **dernier commit de la branche par défaut** sur GitHub ; bo
 - **UI** : `admin_version.html` (carte version + git, bloc résultat coloré à jour / en retard /
   erreur, bouton « Mettre à jour » affiché seulement si `behind_by > 0` et arbre propre). Pied de
   **barre latérale** : `v<version>` + pastille « MAJ dispo » (lue du cache) visible **pour tous les
-  utilisateurs** (exigence page user de SECURITE.MD). Icône `tag` ajoutée à `_macros.html`.
+  utilisateurs** (exigence page user de SECURITE.md). Icône `tag` ajoutée à `_macros.html`.
 - **`Dockerfile`** : `COPY VERSION .`. En conteneur il n'y a pas de `.git` → `apply_update()`
   renvoie le message « instance non gérée par git » (comportement attendu ; MAJ = rebuild d'image).
 - **Contexte Jinja** : `app/__init__.py` injecte `app_version` et `update_available` dans tous les
@@ -273,7 +273,7 @@ détection de MAJ = **dernier commit de la branche par défaut** sur GitHub ; bo
   path avec git mocké (enchaînement fetch → merge --ff-only), routes admin + audit, version visible
   en sidebar pour un non-admin.
 
-**Reste à appliquer de SECURITE.MD** (dans l'ordre convenu) : couche **groupes** (un groupe porte
+**Reste à appliquer de SECURITE.md** (dans l'ordre convenu) : couche **groupes** (un groupe porte
 un rôle + une liste de comptes S3 ; utilisateurs rattachés à des groupes), **HTTPS / Let's Encrypt**
 (approche non tranchée : Caddy dans le compose vs TLS géré en amont), **désactivation de compte**
 (vs suppression), **module de sauvegarde de configuration** (SMB / S3, planification, rétention).
@@ -299,7 +299,7 @@ JS, pas de build step) — cohérent avec la contrainte "techno très light, pas
 - **Explorateur de buckets** : navigation par préfixe `/` (façon dossiers), upload multi-fichiers,
   téléchargement, création de bucket/dossier, suppression (objet, "dossier" = suppression
   récursive de tous les objets sous le préfixe, ou bucket entier).
-- **Charte graphique** : CSS transcrit depuis `CHARTE_GRAPHIQUE.MD` (variables couleur, polices
+- **Charte graphique** : CSS transcrit depuis `~/claude/CHARTE_GRAPHIQUE.md` (variables couleur, polices
   Google Fonts Montserrat/Open Sans/DM Mono, boutons `.btn.blue/orange/red/ghost`, badges
   `.bdg.admin/operateur/readonly`, layout header/sidebar). Logo et favicon extraits du base64
   embarqué dans ce même fichier (`app/static/assets/logo.png`, `favicon.png`).
@@ -373,7 +373,7 @@ app/
                           #   + bucket_bulk / object_bulk (actions groupées : refresh, delete, zip)
   templates/             # Jinja2, un template par page + _macros.html (icônes SVG inline)
                           #   admin_logs.html (journal live + connexions), admin_version.html
-  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs / .ver-* / .bulk-bar)
+  static/style.css        # CSS transcrit de ~/claude/CHARTE_GRAPHIQUE.md (+ styles .log-view / .tabs / .ver-* / .bulk-bar)
   static/bulk.js          # multi-sélection des tableaux <form data-bulk> (vanilla)
 VERSION                 # numéro de version semver, affiché dans l'UI, COPY dans l'image Docker
 data/                   # gitignored — db.json (chiffré), usage_cache.json, audit.jsonl(.1), version_check.json
