@@ -51,50 +51,54 @@
 <p class="hint">{{ total_files }} objet(s) trouvé(s) pour « {{ query }} » dans ce dossier.</p>
 {% endif %}
 
-<table class="tbl">
-  <thead><tr><th>Nom</th><th>Taille</th><th>Modifié</th><th></th></tr></thead>
-  <tbody>
-  {% for folder in folders %}
-    <tr>
-      <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=folder.prefix) }}">{{ macros.icon("folder") }} {{ folder.name }}</a></td>
-      <td class="hint">—</td>
-      <td class="hint">—</td>
-      <td class="row-actions">
-        {% if can_write %}
-        <form method="post" action="{{ url_for('explorer.delete_object', account_id=account.id, bucket=bucket) }}"
-              onsubmit="return confirm('Supprimer le dossier {{ folder.name }} et tout son contenu ?');">
-          <input type="hidden" name="key" value="{{ folder.prefix }}">
-          <input type="hidden" name="prefix" value="{{ prefix }}">
-          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  {% for obj in files %}
-    <tr>
-      <td>{{ macros.icon("file") }} {{ obj.name }}</td>
-      <td class="mono">{{ obj.size }}</td>
-      <td class="mono">{{ obj.last_modified }}</td>
-      <td class="row-actions">
-        <a class="btn icon ghost sm" title="Télécharger" href="{{ url_for('explorer.download', account_id=account.id, bucket=bucket, key=obj.key) }}">{{ macros.icon("download") }}</a>
-        {% if can_write %}
-        <form method="post" action="{{ url_for('explorer.delete_object', account_id=account.id, bucket=bucket) }}"
-              onsubmit="return confirm('Supprimer {{ obj.key }} ?');">
-          <input type="hidden" name="key" value="{{ obj.key }}">
-          <input type="hidden" name="prefix" value="{{ prefix }}">
-          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-  {% else %}
-    {% if not folders %}
-    <tr><td colspan="4" class="hint">Ce dossier est vide</td></tr>
+<form method="post" action="{{ url_for('explorer.object_bulk', account_id=account.id, bucket=bucket) }}" data-bulk>
+  <input type="hidden" name="prefix" value="{{ prefix }}">
+  <div class="bulk-bar">
+    <span class="bulk-count hint">Aucune sélection</span>
+    <button class="btn ghost sm" type="submit" name="action" value="download" data-bulk-action disabled>
+      {{ macros.icon("download") }} Télécharger (.zip)
+    </button>
+    {% if can_write %}
+    <button class="btn red sm" type="submit" name="action" value="delete" data-bulk-action disabled
+            data-bulk-confirm="Supprimer les %n élément(s) sélectionné(s) ? Les dossiers sont supprimés récursivement.">
+      {{ macros.icon("trash") }} Supprimer la sélection
+    </button>
     {% endif %}
-  {% endfor %}
-  </tbody>
-</table>
+  </div>
+
+  <table class="tbl">
+    <thead><tr>
+      <th class="chk"><input type="checkbox" class="bulk-all" title="Tout sélectionner"></th>
+      <th>Nom</th><th>Taille</th><th>Modifié</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for folder in folders %}
+      <tr>
+        <td class="chk"><input type="checkbox" class="bulk-item" name="key" value="{{ folder.prefix }}"></td>
+        <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=bucket, prefix=folder.prefix) }}">{{ macros.icon("folder") }} {{ folder.name }}</a></td>
+        <td class="hint">—</td>
+        <td class="hint">—</td>
+        <td></td>
+      </tr>
+    {% endfor %}
+    {% for obj in files %}
+      <tr>
+        <td class="chk"><input type="checkbox" class="bulk-item" name="key" value="{{ obj.key }}"></td>
+        <td>{{ macros.icon("file") }} {{ obj.name }}</td>
+        <td class="mono">{{ obj.size }}</td>
+        <td class="mono">{{ obj.last_modified }}</td>
+        <td class="row-actions">
+          <a class="btn icon ghost sm" title="Télécharger" href="{{ url_for('explorer.download', account_id=account.id, bucket=bucket, key=obj.key) }}">{{ macros.icon("download") }}</a>
+        </td>
+      </tr>
+    {% else %}
+      {% if not folders %}
+      <tr><td colspan="5" class="hint">Ce dossier est vide</td></tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
 
 {% if total_pages > 1 %}
 <div class="pager">
@@ -113,3 +117,5 @@
 </div>
 {% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='bulk.js') }}"></script>{% endblock %}

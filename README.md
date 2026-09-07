@@ -17,6 +17,11 @@ chiffré côté serveur.
 - **Explorateur de buckets** par compte : navigation par "dossiers" (préfixes `/`), upload,
   téléchargement, création/suppression de dossiers et buckets, recherche d'objets dans le dossier
   courant, pagination (20/30/50/100 par page).
+- **Actions groupées** (cases à cocher + « tout sélectionner ») :
+  - page Buckets : actualiser la volumétrie de plusieurs buckets d'un coup (ceux calculés il y a
+    moins de 24 h sont ignorés et comptabilisés dans le résumé), ou supprimer plusieurs buckets ;
+  - explorateur d'objets : supprimer une sélection d'objets et de dossiers (récursif), ou la
+    télécharger en une archive `.zip` (construite côté serveur).
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).

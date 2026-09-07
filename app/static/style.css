@@ -239,6 +239,13 @@ a:hover { text-decoration: underline; }
 .row-actions { display: flex; gap: 6px; }
 .row-actions form { margin: 0; }
 
+/* Multi-selection */
+.tbl th.chk, .tbl td.chk { width: 36px; text-align: center; padding-right: 0; }
+.tbl th.chk input, .tbl td.chk input { cursor: pointer; margin: 0; }
+.bulk-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.bulk-bar .bulk-count { min-width: 130px; }
+.bulk-bar .btn[disabled] { opacity: .45; cursor: not-allowed; }
+
 /* Misc */
 
 .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }

@@ -24,38 +24,46 @@
 </form>
 {% endif %}
 
-<table class="tbl">
-  <thead><tr><th>Bucket</th><th>Créé le</th><th>Usage</th><th>Objets</th><th>Volumétrie maj le</th><th></th></tr></thead>
-  <tbody>
-  {% for b in buckets %}
-    <tr>
-      <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=b.name) }}">{{ macros.icon("box") }} {{ b.name }}</a></td>
-      <td class="mono">{{ b.creation_date }}</td>
-      <td class="mono">{{ b.usage.size_bytes | format_size if b.usage else "—" }}</td>
-      <td class="mono">{{ b.usage.object_count if b.usage else "—" }}</td>
-      <td class="mono hint">
-        {% if b.usage %}{{ b.usage.computed_at.strftime('%d/%m/%Y %H:%M') }} UTC{% else %}jamais{% endif %}
-      </td>
-      <td class="row-actions">
-        {% if can_write %}
-        <form method="post" action="{{ url_for('explorer.bucket_usage_refresh', account_id=account.id, bucket=b.name) }}">
-          {% if b.refresh_allowed %}
-          <button class="btn icon ghost sm" type="submit" title="Actualiser la volumétrie">{{ macros.icon("refresh") }}</button>
-          {% else %}
-          <button class="btn icon ghost sm" type="button" disabled
-                  title="Prochaine actualisation possible le {{ b.next_refresh_at.strftime('%d/%m/%Y %H:%M') }} UTC">{{ macros.icon("refresh") }}</button>
-          {% endif %}
-        </form>
-        <form method="post" action="{{ url_for('explorer.bucket_delete', account_id=account.id, bucket=b.name) }}"
-              onsubmit="return confirm('Supprimer le bucket {{ b.name }} ?');">
-          <button class="btn icon red sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-  {% else %}
-    <tr><td colspan="6" class="hint">Aucun bucket</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+<form method="post" action="{{ url_for('explorer.bucket_bulk', account_id=account.id) }}" data-bulk>
+  <div class="bulk-bar">
+    <span class="bulk-count hint">Aucune sélection</span>
+    <button class="btn ghost sm" type="submit" name="action" value="usage_refresh" data-bulk-action disabled>
+      {{ macros.icon("refresh") }} Actualiser la volumétrie
+    </button>
+    {% if can_write %}
+    <button class="btn red sm" type="submit" name="action" value="delete" data-bulk-action disabled
+            data-bulk-confirm="Supprimer les %n bucket(s) sélectionné(s) ? Action irréversible.">
+      {{ macros.icon("trash") }} Supprimer
+    </button>
+    {% endif %}
+  </div>
+
+  <table class="tbl">
+    <thead><tr>
+      <th class="chk"><input type="checkbox" class="bulk-all" title="Tout sélectionner"></th>
+      <th>Bucket</th><th>Créé le</th><th>Usage</th><th>Objets</th><th>Volumétrie maj le</th>
+    </tr></thead>
+    <tbody>
+    {% for b in buckets %}
+      <tr>
+        <td class="chk"><input type="checkbox" class="bulk-item" name="bucket" value="{{ b.name }}"></td>
+        <td><a href="{{ url_for('explorer.objects', account_id=account.id, bucket=b.name) }}">{{ macros.icon("box") }} {{ b.name }}</a></td>
+        <td class="mono">{{ b.creation_date }}</td>
+        <td class="mono">{{ b.usage.size_bytes | format_size if b.usage else "—" }}</td>
+        <td class="mono">{{ b.usage.object_count if b.usage else "—" }}</td>
+        <td class="mono hint">
+          {% if b.usage %}{{ b.usage.computed_at.strftime('%d/%m/%Y %H:%M') }} UTC{% else %}jamais{% endif %}
+          {% if not b.refresh_allowed %}<br><span class="hint">prochaine maj possible le {{ b.next_refresh_at.strftime('%d/%m/%Y %H:%M') }} UTC</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="hint">Aucun bucket</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</form>
+
+<p class="hint">Coche un ou plusieurs buckets puis choisis une action. L'actualisation de volumétrie ignore les buckets calculés il y a moins de 24 h.</p>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='bulk.js') }}"></script>{% endblock %}

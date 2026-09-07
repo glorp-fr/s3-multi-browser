@@ -1,4 +1,5 @@
 import io
+import zipfile
 
 from botocore.exceptions import ClientError
 from flask import (
@@ -192,6 +193,66 @@ def bucket_usage_refresh(account_id, bucket):
     return redirect(url_for("explorer.buckets", account_id=account_id))
 
 
+@bp.route("/accounts/<account_id>/buckets/bulk", methods=["POST"])
+@login_required
+def bucket_bulk(account_id):
+    """Grouped action on several buckets: refresh volumetry, or delete."""
+    account = _get_authorized_account(account_id)
+    action = request.form.get("action")
+    names = [n for n in request.form.getlist("bucket") if n]
+    back = redirect(url_for("explorer.buckets", account_id=account_id))
+    if not names:
+        flash("Aucun bucket sélectionné", "error")
+        return back
+    client = get_client(account)
+
+    if action == "usage_refresh":
+        done = skipped = errors = 0
+        for name in names:
+            entry = usage_cache.get(account_id, name)
+            if not usage_cache.is_refresh_allowed(entry):
+                skipped += 1
+                continue
+            try:
+                size_bytes, object_count = usage_cache.compute_bucket_usage(client, name)
+                usage_cache.set(account_id, name, size_bytes, object_count)
+                done += 1
+            except ClientError:
+                errors += 1
+        audit.log("s3_read", "usage_refresh_bulk",
+                  f"Volumétrie groupée — {account['name']} : {done} recalculé(s), "
+                  f"{skipped} ignoré(s) (<24 h), {errors} en erreur",
+                  target=account["name"], status="fail" if errors else "ok")
+        msg = f"{done} volumétrie(s) recalculée(s)"
+        if skipped:
+            msg += f", {skipped} ignorée(s) (calcul de moins de 24 h)"
+        if errors:
+            msg += f", {errors} en erreur"
+        flash(msg, "error" if errors else "success")
+        return back
+
+    if action == "delete":
+        if not can_write(g.user):
+            abort(403)
+        done = errors = 0
+        for name in names:
+            try:
+                client.delete_bucket(Bucket=name)
+                done += 1
+            except ClientError:
+                errors += 1
+        audit.log("s3_write", "delete_bucket_bulk",
+                  f"Suppression groupée de buckets — {account['name']} : "
+                  f"{done} supprimé(s), {errors} en erreur",
+                  target=account["name"], status="fail" if errors else "ok")
+        flash(f"{done} bucket(s) supprimé(s)" + (f", {errors} en erreur" if errors else ""),
+              "error" if errors else "success")
+        return back
+
+    flash("Action groupée inconnue", "error")
+    return back
+
+
 @bp.route("/accounts/<account_id>/buckets/<bucket>")
 @login_required
 def objects(account_id, bucket):
@@ -380,3 +441,84 @@ def delete_object(account_id, bucket):
                   f"Échec suppression — {account['name']}/{bucket}/{key} : {exc}",
                   target=f"{account['name']}/{bucket}/{key}", status="fail")
     return redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket, prefix=prefix))
+
+
+def _expand_keys(client, bucket, keys):
+    """Expand a mix of object keys and "folder" prefixes (trailing /) into a flat,
+    deduplicated, sorted list of real object keys."""
+    out = []
+    for key in keys:
+        if key.endswith("/"):
+            paginator = client.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=bucket, Prefix=key):
+                out.extend(o["Key"] for o in page.get("Contents", []) if not o["Key"].endswith("/"))
+        else:
+            out.append(key)
+    return sorted(set(out))
+
+
+@bp.route("/accounts/<account_id>/buckets/<bucket>/bulk", methods=["POST"])
+@login_required
+def object_bulk(account_id, bucket):
+    """Grouped action on selected objects/folders: delete, or download as a .zip."""
+    account = _get_authorized_account(account_id)
+    action = request.form.get("action")
+    prefix = request.form.get("prefix", "")
+    keys = [k for k in request.form.getlist("key") if k]
+    back = redirect(url_for("explorer.objects", account_id=account_id, bucket=bucket, prefix=prefix))
+    if not keys:
+        flash("Aucun élément sélectionné", "error")
+        return back
+    client = get_client(account)
+
+    if action == "delete":
+        if not can_write(g.user):
+            abort(403)
+        deleted = errors = 0
+        try:
+            batch = [{"Key": k} for k in _expand_keys(client, bucket, keys)]
+            for i in range(0, len(batch), 1000):
+                resp = client.delete_objects(Bucket=bucket, Delete={"Objects": batch[i:i + 1000]})
+                deleted += len(resp.get("Deleted", []))
+                errors += len(resp.get("Errors", []))
+        except ClientError as exc:
+            flash(f"Erreur OOS : {exc}", "error")
+            errors += 1
+        audit.log("s3_write", "delete_object_bulk",
+                  f"Suppression groupée — {account['name']}/{bucket}/{prefix} : "
+                  f"{len(keys)} sélection(s) → {deleted} objet(s) supprimé(s)"
+                  + (f", {errors} erreur(s)" if errors else ""),
+                  target=f"{account['name']}/{bucket}/{prefix}", status="fail" if errors else "ok")
+        flash(f"{deleted} objet(s) supprimé(s)" + (f", {errors} erreur(s)" if errors else ""),
+              "error" if errors else "success")
+        return back
+
+    if action == "download":
+        try:
+            obj_keys = _expand_keys(client, bucket, keys)
+        except ClientError as exc:
+            flash(f"Erreur OOS : {exc}", "error")
+            return back
+        if not obj_keys:
+            flash("Aucun objet à télécharger dans la sélection", "error")
+            return back
+        buf = io.BytesIO()
+        added = 0
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for key in obj_keys:
+                try:
+                    obj = client.get_object(Bucket=bucket, Key=key)
+                except ClientError:
+                    continue
+                arcname = key[len(prefix):] if prefix and key.startswith(prefix) else key
+                zf.writestr(arcname or key.rsplit("/", 1)[-1], obj["Body"].read())
+                added += 1
+        buf.seek(0)
+        audit.log("s3_read", "download_zip",
+                  f"Téléchargement .zip — {account['name']}/{bucket}/{prefix} : {added} objet(s)",
+                  target=f"{account['name']}/{bucket}/{prefix}")
+        zipname = (prefix.rstrip("/").rsplit("/", 1)[-1] or bucket) + ".zip"
+        return send_file(buf, as_attachment=True, download_name=zipname, mimetype="application/zip")
+
+    flash("Action groupée inconnue", "error")
+    return back

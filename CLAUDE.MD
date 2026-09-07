@@ -95,6 +95,39 @@ Application **module par module** ; premier module livré : **Logs**.
   `cat`), CRUD admin audité, et instrumentation S3 (buckets/objects/download/create/mkdir/upload/
   delete objet+dossier/delete bucket) — plus vérif qu'aucun secret ne fuit dans les logs.
 
+### Actions groupées (multi-sélection) dans l'explorateur
+
+Choix validés : les 4 actions groupées demandées, motif « cases à cocher + boutons d'action
+au-dessus du tableau » (désactivés tant que rien n'est coché).
+
+- **`app/static/bulk.js`** (vanilla, ~50 l, pas de dépendance) : câble tout `<form data-bulk>` —
+  case d'en-tête `.bulk-all` (avec état indeterminate), cases `.bulk-item` (leur `name`/`value`
+  portent la charge utile), boutons `[data-bulk-action]` activés/désactivés selon la sélection,
+  `.bulk-count` (compteur), confirmation via `data-bulk-confirm="… %n …"` sur le bouton concerné.
+  Chargé par un nouveau bloc `{% block scripts %}` dans `base.html`.
+- **Contrainte HTML** : pas de `<form>` imbriqués. Les formulaires d'action par ligne (refresh /
+  delete unitaires) de `buckets.html` et `explorer.html` ont donc été **retirés** au profit de la
+  sélection ; le lien de téléchargement unitaire (`<a>`) reste, valide dans un `<form>`.
+- **`bucket_bulk`** (`POST /accounts/<id>/buckets/bulk`, champ `bucket` multiple + `action`) :
+  - `usage_refresh` : recalcule la volumétrie des buckets cochés, **saute** ceux dont le dernier
+    calcul date de moins de 24 h (`usage_cache.is_refresh_allowed`) ; résumé `done / skipped /
+    errors` en flash + audit `s3_read/usage_refresh_bulk`.
+  - `delete` : `delete_bucket` sur chaque bucket coché (`can_write` requis, sinon 403) ;
+    audit `s3_write/delete_bucket_bulk`.
+- **`object_bulk`** (`POST /accounts/<id>/buckets/<bucket>/bulk`, champ `key` multiple — objets
+  **et** préfixes « dossier » finissant par `/` — + `prefix` courant + `action`) :
+  - `delete` : `_expand_keys()` déplie les dossiers en objets réels, puis `delete_objects` par lots
+    de 1000 ; comptes `Deleted`/`Errors` ; `can_write` requis ; audit `s3_write/delete_object_bulk`.
+  - `download` : déplie la sélection, construit un **`.zip`** en mémoire (`zipfile.ZIP_DEFLATED`,
+    `BytesIO`), `arcname` relatif au préfixe courant, renvoyé en `send_file` (`application/zip`,
+    nom = dernier segment du préfixe ou bucket). **Pas** de `can_write` (lecture). Audit
+    `s3_read/download_zip`. Coûteux sur gros volumes (tout en RAM) — l'utilisateur en a été averti.
+- **CSS** : `.bulk-bar`, colonne `.chk` (36 px) dans `style.css`.
+- **Tests** (`test_bulk.py`, non versionné, S3 mocké) : refresh groupé + règle des 24 h, delete
+  groupé de buckets, delete groupé objets (dossier déplié récursivement), download `.zip` (membres
+  + contenu vérifiés via `zipfile`), 403 pour `readonly` sur les deletes, `readonly` autorisé au
+  `.zip`, sélection vide → erreur. Rendu des templates `buckets.html` / `explorer.html` re-vérifié.
+
 ### Application de SECURITE.MD — Module « Version & mises à jour »
 
 Choix validés avec l'utilisateur : source de version = **fichier `VERSION`** (semver) + SHA git ;
@@ -228,9 +261,11 @@ app/
     admin_routes.py       # /admin/providers, /admin/accounts, /admin/users (CRUD, audités)
                           #   + /admin/logs (+ /logs/tail), /admin/version (+ /version/check, /version/update)
     explorer_routes.py     # /accounts, buckets, objets, upload/download/delete, usage/refresh (audités)
+                          #   + bucket_bulk / object_bulk (actions groupées : refresh, delete, zip)
   templates/             # Jinja2, un template par page + _macros.html (icônes SVG inline)
                           #   admin_logs.html (journal live + connexions), admin_version.html
-  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs / .ver-*)
+  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs / .ver-* / .bulk-bar)
+  static/bulk.js          # multi-sélection des tableaux <form data-bulk> (vanilla)
 VERSION                 # numéro de version semver, affiché dans l'UI, COPY dans l'image Docker
 data/                   # gitignored — db.json (chiffré), usage_cache.json, audit.jsonl(.1), version_check.json
 ```
