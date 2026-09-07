@@ -121,13 +121,18 @@ def check_update():
         _cache_write(result)
         return result
 
-    behind = cmp.get("behind_by", 0) or 0
+    # GitHub compares the *head* ref against the *base* ref. Here base = local commit,
+    # head = <branch>, so `ahead_by` is the number of commits the branch has that the
+    # deployed checkout is missing (= how far behind we are), and `behind_by` would be
+    # our local-only commits.
+    behind = cmp.get("ahead_by", 0) or 0
+    local_only = cmp.get("behind_by", 0) or 0
     missing = cmp.get("commits") or []
     result.update(
         ok=True,
         default_branch=branch,
         behind_by=behind,
-        ahead_by=cmp.get("ahead_by", 0) or 0,
+        ahead_by=local_only,
         up_to_date=(behind == 0),
         diverged=(cmp.get("status") == "diverged"),
         remote_commit_short=(missing[-1]["sha"][:7] if missing else info["commit_short"]),

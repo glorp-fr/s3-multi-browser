@@ -51,6 +51,15 @@ Choix validés avec l'utilisateur : destinations **S3 et SMB toutes deux fonctio
 contenu = `db.json` **+** `audit.jsonl` (+ `.1`) ; planification par **thread interne** au
 process (pas de cron).
 
+**Correctif `version.py` (détection de MAJ)** — au passage : `check_update()` faisait
+`GET /compare/<local>...<branche>` mais lisait `behind_by`, toujours ≈ 0 dans ce sens (GitHub
+décrit le *head* par rapport au *base*). Du coup l'instance se croyait toujours « à jour ».
+Corrigé : on lit `ahead_by` (commits de la branche absents du checkout = retard) et `behind_by`
+devient le compte des commits locaux non poussés (cas divergé). Le bouton *Mettre à jour*
+lui n'était pas affecté (il fait `git fetch` + `git merge --ff-only` sans consulter le check).
+⚠ L'instance en place tourne encore l'ancien code : le bouton *Vérifier* dira « à jour » à tort
+jusqu'à l'application de cette MAJ ; *Mettre à jour* fonctionne quand même.
+
 - **Nouvelle dép.** : `smbprotocol==1.17.0` (client SMB2/3 pur Python, dans le venv — pas de
   `smbclient` système). Ajoutée à `requirements.txt` **et** installée à la main dans le venv de
   l'instance en place (sinon la page planterait après la MAJ, `git merge` ne faisant pas de
