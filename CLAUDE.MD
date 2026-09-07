@@ -40,25 +40,30 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
-### Application de SECURITE.MD — Module « Sauvegarde de configuration » — v0.7.0
+### Application de SECURITE.MD — Module « Sauvegarde de configuration » — v0.7.x
 
-Livré depuis un **clone séparé** poussé sur GitHub sans mettre à jour le gunicorn en place :
-le but de la session était de valider de bout en bout la détection de MAJ + le bouton
-*Mettre à jour* de `Administration → Version` (l'instance reste sur v0.6.0 / `7030b67` tant que
-l'admin ne clique pas).
+Livré depuis un **clone séparé** poussé sur GitHub, sans toucher au gunicorn en place :
+le but était de valider de bout en bout la détection de MAJ + le bouton *Mettre à jour* de
+`Administration → Version`.
 
 Choix validés avec l'utilisateur : destinations **S3 et SMB toutes deux fonctionnelles** ;
 contenu = `db.json` **+** `audit.jsonl` (+ `.1`) ; planification par **thread interne** au
 process (pas de cron).
 
-**Correctif `version.py` (détection de MAJ)** — au passage : `check_update()` faisait
+**Correctif `version.py` (détection de MAJ)** : `check_update()` faisait
 `GET /compare/<local>...<branche>` mais lisait `behind_by`, toujours ≈ 0 dans ce sens (GitHub
-décrit le *head* par rapport au *base*). Du coup l'instance se croyait toujours « à jour ».
-Corrigé : on lit `ahead_by` (commits de la branche absents du checkout = retard) et `behind_by`
-devient le compte des commits locaux non poussés (cas divergé). Le bouton *Mettre à jour*
-lui n'était pas affecté (il fait `git fetch` + `git merge --ff-only` sans consulter le check).
-⚠ L'instance en place tourne encore l'ancien code : le bouton *Vérifier* dira « à jour » à tort
-jusqu'à l'application de cette MAJ ; *Mettre à jour* fonctionne quand même.
+décrit le *head* par rapport au *base*). Du coup l'instance se croyait toujours « à jour » et,
+`behind_by` valant 0, le bouton *Mettre à jour* (affiché seulement si `behind_by > 0`) ne
+s'affichait jamais. Corrigé : on lit `ahead_by` (commits de la branche absents du checkout =
+retard) et `behind_by` devient le compte des commits locaux non poussés (cas divergé).
+
+**Conséquence de bootstrap** : l'instance qui tournait (v0.6.0 / `7030b67`) avait ce bug — elle
+ne pouvait pas se mettre à jour elle-même via l'UI. Les commits `1f8d0cd` (module sauvegarde) +
+`18a788b` (le correctif) ont donc été appliqués **une fois à la main** sur le serveur, avec
+exactement les commandes du bouton : `git fetch --prune origin` puis
+`git merge --ff-only origin/master` (fast-forward propre `7030b67` → `18a788b`) puis
+`kill -HUP <master gunicorn>`. À partir de `18a788b` la détection fonctionne et le cycle
+*Vérifier → Mettre à jour → reload* se valide depuis l'UI au push suivant.
 
 - **Nouvelle dép.** : `smbprotocol==1.17.0` (client SMB2/3 pur Python, dans le venv — pas de
   `smbclient` système). Ajoutée à `requirements.txt` **et** installée à la main dans le venv de
