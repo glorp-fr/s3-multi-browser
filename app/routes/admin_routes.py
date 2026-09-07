@@ -1,6 +1,6 @@
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, url_for
 
-from .. import audit, storage, version
+from .. import audit, backup, storage, version
 from ..auth import PERMISSIONS, admin_required
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -53,6 +53,43 @@ def version_update():
                   target=result["new"][:7])
         flash(result["message"], "success")
     return redirect(url_for("admin.version_page"))
+
+
+# --- Sauvegarde de configuration -------------------------------------------
+
+@bp.route("/backup", methods=["GET", "POST"])
+@admin_required
+def backup_page():
+    if request.method == "POST":
+        f = request.form
+        try:
+            storage.update_backup_config(
+                enabled=f.get("enabled"),
+                destination=f.get("destination", "s3"),
+                frequency=f.get("frequency", "daily"),
+                hour=f.get("hour", 3), minute=f.get("minute", 0),
+                weekday=f.get("weekday", 0), retention=f.get("retention", 7),
+                s3={k: f.get(f"s3_{k}", "") for k in
+                    ("endpoint", "region", "access_key", "bucket", "prefix", "secret_key")},
+                smb={k: f.get(f"smb_{k}", "") for k in
+                     ("server", "share", "path", "domain", "username", "password")},
+            )
+            backup.reschedule()
+            audit.log("admin", "backup_config", "Configuration de sauvegarde mise à jour")
+            flash("Configuration de sauvegarde enregistrée", "success")
+            return redirect(url_for("admin.backup_page"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_backup.html", cfg=storage.get_backup_config(),
+                           next_run=backup.next_run_display())
+
+
+@bp.route("/backup/run", methods=["POST"])
+@admin_required
+def backup_run():
+    result = backup.run_backup(actor=g.user["username"])
+    flash(result["message"], "success" if result["ok"] else "error")
+    return redirect(url_for("admin.backup_page"))
 
 
 # --- Logs ------------------------------------------------------------------

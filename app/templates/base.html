@@ -31,6 +31,7 @@
     <a class="navlink" href="{{ url_for('admin.groups') }}">{{ macros.icon("users") }} Groupes</a>
     <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
     <a class="navlink" href="{{ url_for('admin.logs') }}">{{ macros.icon("activity") }} Logs</a>
+    <a class="navlink" href="{{ url_for('admin.backup_page') }}">{{ macros.icon("save") }} Sauvegarde</a>
     <a class="navlink" href="{{ url_for('admin.version_page') }}">{{ macros.icon("tag") }} Version{% if update_available %} <span class="upd-dot" title="Mise à jour disponible">●</span>{% endif %}</a>
     {% endif %}
     <div class="sidebar-foot">

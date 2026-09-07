@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Sauvegarde — Admin{% endblock %}
+{% set WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] %}
+{% block content %}
+<h1 class="stitle">Sauvegarde de la configuration</h1>
+<p class="hint">Archive <code>data/db.json</code> + le journal d'audit dans un <code>.tar.gz</code>
+  horodaté, envoyé vers S3 ou un partage SMB, avec purge des archives au-delà de la rétention.
+  Les horaires sont en <strong>UTC</strong>. Le mot de passe SMB et la Secret Key S3 sont
+  chiffrés au repos.</p>
+
+<div class="usage-summary">
+  {% if cfg.last_run %}
+    Dernière exécution : {{ cfg.last_run }}
+    <span class="bdg {{ 'success' if cfg.last_status == 'ok' else 'error' }}">{{ cfg.last_status }}</span>
+    {% if cfg.last_archive %}<span class="hint mono">{{ cfg.last_archive }}</span>{% endif %}
+    {% if cfg.last_error %}<div class="hint">{{ cfg.last_error }}</div>{% endif %}
+  {% else %}
+    <span class="hint">Aucune sauvegarde exécutée pour l'instant.</span>
+  {% endif %}
+  {% if next_run %}<div class="hint">Prochaine exécution planifiée : {{ next_run }}</div>
+  {% elif cfg.enabled %}<div class="hint">Planification active.</div>
+  {% else %}<div class="hint">Planification désactivée.</div>{% endif %}
+</div>
+
+<form class="form-card" method="post" id="backup-form">
+  <label class="checkbox-row">
+    <input type="checkbox" name="enabled" {{ "checked" if cfg.enabled else "" }}>
+    Activer la sauvegarde planifiée
+  </label>
+
+  <fieldset>
+    <legend>Destination</legend>
+    <label class="checkbox-row">
+      <input type="radio" name="destination" value="s3" {{ "checked" if cfg.destination == "s3" else "" }}>
+      S3 (compatible AWS)
+    </label>
+    <label class="checkbox-row">
+      <input type="radio" name="destination" value="smb" {{ "checked" if cfg.destination == "smb" else "" }}>
+      SMB / CIFS
+    </label>
+  </fieldset>
+
+  <fieldset data-dest="s3">
+    <legend>Paramètres S3</legend>
+    <label>Endpoint
+      <input type="text" name="s3_endpoint" class="mono" placeholder="https://oos.eu-west-2.outscale.com"
+             value="{{ cfg.s3.endpoint }}">
+    </label>
+    <label>Région <span class="hint">(optionnel)</span>
+      <input type="text" name="s3_region" class="mono" value="{{ cfg.s3.region }}">
+    </label>
+    <label>Access Key
+      <input type="text" name="s3_access_key" class="mono" value="{{ cfg.s3.access_key }}">
+    </label>
+    <label>Secret Key {% if cfg.s3.secret_key_enc %}<span class="hint">(laisser vide pour ne pas modifier)</span>{% endif %}
+      <input type="password" name="s3_secret_key" class="mono" autocomplete="new-password">
+    </label>
+    <label>Bucket
+      <input type="text" name="s3_bucket" class="mono" value="{{ cfg.s3.bucket }}">
+    </label>
+    <label>Préfixe
+      <input type="text" name="s3_prefix" class="mono" value="{{ cfg.s3.prefix }}" placeholder="config-backups/">
+    </label>
+  </fieldset>
+
+  <fieldset data-dest="smb">
+    <legend>Paramètres SMB</legend>
+    <label>Serveur
+      <input type="text" name="smb_server" class="mono" placeholder="fileserver.local" value="{{ cfg.smb.server }}">
+    </label>
+    <label>Partage
+      <input type="text" name="smb_share" class="mono" placeholder="backups" value="{{ cfg.smb.share }}">
+    </label>
+    <label>Sous-dossier <span class="hint">(optionnel)</span>
+      <input type="text" name="smb_path" class="mono" placeholder="s3-browser/config" value="{{ cfg.smb.path }}">
+    </label>
+    <label>Domaine <span class="hint">(optionnel)</span>
+      <input type="text" name="smb_domain" class="mono" value="{{ cfg.smb.domain }}">
+    </label>
+    <label>Utilisateur
+      <input type="text" name="smb_username" class="mono" value="{{ cfg.smb.username }}">
+    </label>
+    <label>Mot de passe {% if cfg.smb.password_enc %}<span class="hint">(laisser vide pour ne pas modifier)</span>{% endif %}
+      <input type="password" name="smb_password" autocomplete="new-password">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Planification &amp; rétention</legend>
+    <label>Fréquence
+      <select name="frequency" id="frequency">
+        <option value="daily" {{ "selected" if cfg.frequency == "daily" else "" }}>Quotidienne</option>
+        <option value="weekly" {{ "selected" if cfg.frequency == "weekly" else "" }}>Hebdomadaire</option>
+      </select>
+    </label>
+    <label data-freq="weekly">Jour
+      <select name="weekday">
+        {% for label in WEEKDAYS %}
+        <option value="{{ loop.index0 }}" {{ "selected" if cfg.weekday == loop.index0 else "" }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Heure (UTC)
+      <input type="number" name="hour" min="0" max="23" value="{{ cfg.hour }}" style="width:5em">
+    </label>
+    <label>Minute
+      <input type="number" name="minute" min="0" max="59" value="{{ cfg.minute }}" style="width:5em">
+    </label>
+    <label>Rétention <span class="hint">(nombre d'archives conservées sur la cible)</span>
+      <input type="number" name="retention" min="1" value="{{ cfg.retention }}" style="width:5em">
+    </label>
+  </fieldset>
+
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+
+<form method="post" action="{{ url_for('admin.backup_run') }}" class="inline-form" style="margin-top:1rem"
+      onsubmit="return confirm('Lancer une sauvegarde maintenant vers la destination enregistrée ?');">
+  <button class="btn ghost" type="submit">{{ macros.icon("save") }} Sauvegarder maintenant</button>
+</form>
+
+<script>
+(function () {
+  const form = document.getElementById('backup-form');
+  function syncDest() {
+    const dest = form.querySelector('input[name="destination"]:checked').value;
+    form.querySelectorAll('fieldset[data-dest]').forEach(function (fs) {
+      fs.hidden = fs.dataset.dest !== dest;
+    });
+  }
+  function syncFreq() {
+    const weekly = document.getElementById('frequency').value === 'weekly';
+    form.querySelectorAll('[data-freq="weekly"]').forEach(function (el) { el.hidden = !weekly; });
+  }
+  form.querySelectorAll('input[name="destination"]').forEach(function (r) {
+    r.addEventListener('change', syncDest);
+  });
+  document.getElementById('frequency').addEventListener('change', syncFreq);
+  syncDest();
+  syncFreq();
+})();
+</script>
+{% endblock %}

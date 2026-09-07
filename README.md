@@ -37,6 +37,14 @@ chiffré côté serveur.
   toutes les 3 s) avec recherche, filtre par catégorie et bouton **Pause**, plus un onglet **historique
   des connexions**. Aucun secret ni mot de passe n'est journalisé. Stocké dans `data/audit.jsonl`
   (JSON Lines, plafonné à 5 Mo puis une rotation `.1`).
+- **Sauvegarde de configuration** (`Administration → Sauvegarde`) : archive `data/db.json` + le
+  journal d'audit dans un `.tar.gz` horodaté, envoyé vers **S3** (endpoint / AK / SK / bucket /
+  préfixe) ou **SMB** (serveur / partage / sous-dossier / domaine / utilisateur / mot de passe).
+  Fréquence quotidienne ou hebdomadaire, heure en **UTC**, **rétention** (N archives conservées sur
+  la cible, les plus anciennes sont purgées). Le mot de passe SMB et la Secret Key S3 sont chiffrés
+  au repos (Fernet, comme les comptes S3). Un minuteur interne au process rejoue la sauvegarde ;
+  bouton **Sauvegarder maintenant** pour un déclenchement synchrone. Garder **un seul worker
+  gunicorn** (sinon chaque worker planifie sa propre sauvegarde).
 - **Version & mises à jour** (`Administration → Version`) : version courante = fichier `VERSION`
   (semver) + SHA court et date du commit du checkout. Bouton **Vérifier les mises à jour** = comparaison
   via l'API GitHub du commit local avec le dernier commit de la branche par défaut du dépôt

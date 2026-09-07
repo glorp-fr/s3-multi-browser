@@ -2,7 +2,7 @@ import os
 
 from flask import Flask, g
 
-from . import auth, storage, usage_cache, version
+from . import auth, backup, storage, usage_cache, version
 
 
 def create_app():
@@ -14,6 +14,7 @@ def create_app():
 
     storage.migrate()
     storage.bootstrap_admin_if_empty()
+    backup.start()
 
     @app.before_request
     def _load_user():

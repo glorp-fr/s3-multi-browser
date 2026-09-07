@@ -4,6 +4,7 @@ import os
 import threading
 import uuid
 from base64 import urlsafe_b64encode
+from datetime import datetime, timezone
 from hashlib import sha256
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -64,8 +65,36 @@ def decrypt_secret(token: str) -> str:
 GROUP_PERMISSIONS = ("download", "upload", "delete", "bucket_admin")
 
 
+def _default_backup():
+    """Config-backup settings (Administration > Sauvegarde). Secrets are stored encrypted
+    in `*_enc` fields, exactly like S3 account Secret Keys."""
+    return {
+        "enabled": False,
+        "destination": "s3",                 # "s3" | "smb"
+        "frequency": "daily",                # "daily" | "weekly"
+        "hour": 3, "minute": 0, "weekday": 0,  # weekday: 0=Mon .. 6=Sun, used when weekly
+        "retention": 7,                      # keep the N most recent archives on the target
+        "s3": {"endpoint": "", "region": "", "access_key": "",
+               "secret_key_enc": "", "bucket": "", "prefix": "config-backups/"},
+        "smb": {"server": "", "share": "", "path": "", "domain": "",
+                "username": "", "password_enc": ""},
+        "last_run": None, "last_status": None, "last_error": None, "last_archive": None,
+    }
+
+
+def _merge_defaults(target, defaults):
+    """Recursively fill missing keys in `target` from `defaults` (in place)."""
+    for key, val in defaults.items():
+        if key not in target:
+            target[key] = val
+        elif isinstance(val, dict) and isinstance(target[key], dict):
+            _merge_defaults(target[key], val)
+    return target
+
+
 def _empty_db():
-    return {"users": [], "accounts": [], "providers": [], "groups": [], "_providers_seeded": False}
+    return {"users": [], "accounts": [], "providers": [], "groups": [],
+            "backup": _default_backup(), "_providers_seeded": False}
 
 
 def _load():
@@ -80,6 +109,7 @@ def _load():
     data.setdefault("providers", [])
     data.setdefault("groups", [])
     data.setdefault("_providers_seeded", False)
+    _merge_defaults(data.setdefault("backup", {}), _default_backup())
     return data
 
 
@@ -450,3 +480,79 @@ def delete_account(account_id):
             if account_id in (group.get("account_ids") or []):
                 group["account_ids"] = [a for a in group["account_ids"] if a != account_id]
         _save(data)
+
+
+# --- Backup config -------------------------------------------------------------
+
+def get_backup_config():
+    """Stored backup settings (secrets kept as opaque `*_enc` fields)."""
+    return _load()["backup"]
+
+
+def backup_smb_password(cfg=None):
+    cfg = cfg or get_backup_config()
+    enc = cfg["smb"].get("password_enc")
+    return decrypt_secret(enc) if enc else ""
+
+
+def backup_s3_secret_key(cfg=None):
+    cfg = cfg or get_backup_config()
+    enc = cfg["s3"].get("secret_key_enc")
+    return decrypt_secret(enc) if enc else ""
+
+
+def update_backup_config(*, enabled, destination, frequency, hour, minute, weekday,
+                         retention, s3, smb):
+    """`s3`/`smb` are dicts of plaintext fields; their `secret_key` / `password` entries are
+    optional — left blank, the previously stored secret is kept."""
+    if destination not in ("s3", "smb"):
+        raise ValueError("Destination invalide")
+    if frequency not in ("daily", "weekly"):
+        raise ValueError("Fréquence invalide")
+    hour, minute, weekday, retention = int(hour), int(minute), int(weekday), int(retention)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("Horaire invalide")
+    if not 0 <= weekday <= 6:
+        raise ValueError("Jour de la semaine invalide")
+    if retention < 1:
+        raise ValueError("La rétention doit être d'au moins 1")
+
+    with _lock:
+        data = _load()
+        b = data["backup"]
+        b.update(enabled=bool(enabled), destination=destination, frequency=frequency,
+                 hour=hour, minute=minute, weekday=weekday, retention=retention)
+
+        b["s3"].update(
+            endpoint=s3.get("endpoint", "").strip(),
+            region=s3.get("region", "").strip(),
+            access_key=s3.get("access_key", "").strip(),
+            bucket=s3.get("bucket", "").strip(),
+            prefix=s3.get("prefix", "").strip(),
+        )
+        if s3.get("secret_key", "").strip():
+            b["s3"]["secret_key_enc"] = encrypt_secret(s3["secret_key"].strip())
+
+        b["smb"].update(
+            server=smb.get("server", "").strip(),
+            share=smb.get("share", "").strip(),
+            path=smb.get("path", "").strip(),
+            domain=smb.get("domain", "").strip(),
+            username=smb.get("username", "").strip(),
+        )
+        if smb.get("password", "").strip():
+            b["smb"]["password_enc"] = encrypt_secret(smb["password"].strip())
+
+        _save(data)
+        return b
+
+
+def record_backup_result(*, status, error=None, archive=None):
+    with _lock:
+        data = _load()
+        data["backup"].update(
+            last_run=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            last_status=status, last_error=error, last_archive=archive,
+        )
+        _save(data)
+        return data["backup"]

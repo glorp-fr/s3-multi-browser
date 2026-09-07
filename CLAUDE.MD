@@ -40,6 +40,47 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Application de SECURITE.MD — Module « Sauvegarde de configuration » — v0.7.0
+
+Livré depuis un **clone séparé** poussé sur GitHub sans mettre à jour le gunicorn en place :
+le but de la session était de valider de bout en bout la détection de MAJ + le bouton
+*Mettre à jour* de `Administration → Version` (l'instance reste sur v0.6.0 / `7030b67` tant que
+l'admin ne clique pas).
+
+Choix validés avec l'utilisateur : destinations **S3 et SMB toutes deux fonctionnelles** ;
+contenu = `db.json` **+** `audit.jsonl` (+ `.1`) ; planification par **thread interne** au
+process (pas de cron).
+
+- **Nouvelle dép.** : `smbprotocol==1.17.0` (client SMB2/3 pur Python, dans le venv — pas de
+  `smbclient` système). Ajoutée à `requirements.txt` **et** installée à la main dans le venv de
+  l'instance en place (sinon la page planterait après la MAJ, `git merge` ne faisant pas de
+  `pip install`).
+- **`storage.py`** : bloc `backup` dans `db.json` (`_default_backup()` + `_merge_defaults()` pour
+  compléter les configs anciennes). `get_backup_config()`, `update_backup_config(...)`
+  (validation horaire/fréquence/rétention ; secrets `smb.password` / `s3.secret_key` chiffrés
+  Fernet dans `*_enc`, laissés vides = inchangés), `backup_smb_password()` /
+  `backup_s3_secret_key()`, `record_backup_result()`.
+- **`app/backup.py`** (nouveau) : `_build_archive()` → `.tar.gz` en mémoire de
+  `data/{db.json,audit.jsonl,audit.jsonl.1}` nommé `config-backup-YYYYmmdd-HHMMSS.tar.gz`.
+  `_push_s3()` (boto3 `put_object` + `list_objects_v2` + `delete_objects` pour la rétention) ;
+  `_push_smb()` (`smbclient.register_session` / `mkdir` récursif / `open_file` / `listdir` /
+  `remove`). `run_backup()` **ne lève jamais** (retourne `{ok, message}`, journalise
+  `admin/backup_run`, verrou non bloquant anti-chevauchement). Planificateur :
+  `_next_run_at()` (quotidien/hebdo, UTC), `reschedule()` (annule puis ré-arme un
+  `threading.Timer` daemon selon la config ; no-op si désactivé), `start()` appelé depuis
+  `create_app()`. **Mono-worker gunicorn requis.**
+- **`admin_routes.py`** : `GET/POST /admin/backup` (form) + `POST /admin/backup/run`
+  (synchrone, acteur = admin courant). Audit `admin/backup_config` + `admin/backup_run`.
+- **Templates** : `admin_backup.html` (nouveau : activer, radio destination S3/SMB avec
+  bascule JS des fieldsets, params S3, params SMB, fréquence + jour (si hebdo) + heure/minute
+  UTC + rétention, bouton *Sauvegarder maintenant*, encart statut dernière/prochaine exéc.).
+  `base.html` : lien sidebar « Sauvegarde » (icône `save` ajoutée à `_macros.html`).
+- **Tests** (script client Flask, DATA_DIR isolé) : rendu page, `_build_archive` (membres
+  `db.json`+`audit.jsonl`), POST config S3 (persistance, chiffrement SK, SK vide = conservée),
+  `_next_run_at` quotidien/hebdo, minuteur armé si activé / annulé si désactivé, `run_backup`
+  sur endpoint invalide → échec gracieux enregistré (`last_status=fail`), SMB non configuré →
+  message « incomplète ». Régression : smoke groups v0.6.0 rejoué OK.
+
 ### Application de SECURITE.MD — Gestion des groupes (RBAC) — v0.6.0
 
 Remplacement du modèle d'autorisation « rôle global + liste de comptes » par un modèle
