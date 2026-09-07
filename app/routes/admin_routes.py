@@ -11,11 +11,14 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 @bp.route("/version")
 @admin_required
 def version_page():
+    state = version.local_state()
     return render_template(
         "admin_version.html",
-        state=version.local_state(),
+        state=state,
         check=version.cached_check(),
         repo=version.REPO,
+        mode="git" if state["is_git"] else "image",
+        updater_ready=bool(version.UPDATE_TOKEN),
     )
 
 
@@ -30,9 +33,12 @@ def version_check():
         audit.log("admin", "version_check", "Vérification MAJ : à jour")
         flash("L'application est à jour.", "success")
     else:
-        audit.log("admin", "version_check",
-                  f"Vérification MAJ : {result['behind_by']} commit(s) de retard")
-        flash(f"Mise à jour disponible : {result['behind_by']} commit(s) de retard.", "success")
+        if result.get("mode") == "image":
+            msg = f"Mise à jour disponible : version {result.get('latest_version') or '?'}."
+        else:
+            msg = f"Mise à jour disponible : {result['behind_by']} commit(s) de retard."
+        audit.log("admin", "version_check", f"Vérification MAJ : {msg}")
+        flash(msg, "success")
     return redirect(url_for("admin.version_page"))
 
 
@@ -47,10 +53,16 @@ def version_update():
         audit.log("admin", "version_update", "Mise à jour : déjà à jour")
         flash(result["message"], "success")
     else:
+        old, new = result.get("old"), result.get("new")
+        if old and new:
+            detail = f"Mise à jour appliquée {old[:7]} → {new[:7]}"
+            target = new[:7]
+        else:
+            detail = result.get("message", "Mise à jour lancée")
+            target = None
         audit.log("admin", "version_update",
-                  f"Mise à jour appliquée {result['old'][:7]} → {result['new'][:7]}"
-                  + (" (rechargement en cours)" if result.get("reload") else ""),
-                  target=result["new"][:7])
+                  detail + (" (rechargement en cours)" if result.get("reload") else ""),
+                  target=target)
         flash(result["message"], "success")
     return redirect(url_for("admin.version_page"))
 

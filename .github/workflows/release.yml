@@ -1,0 +1,80 @@
+name: Publish image
+
+# Déclenché par un tag de version `vX.Y.Z` (voir CLAUDE.md § « Publication d'images »).
+# Publie sur GHCR :
+#   - ghcr.io/<owner>/s3-multi-browser          : vX.Y.Z, X.Y, latest
+#   - ghcr.io/<owner>/s3-multi-browser-updater  : mêmes tags (sidecar de mise à jour)
+# et crée une GitHub Release (lue par la détection de MAJ des instances en conteneur).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # créer la Release
+  packages: write   # pousser sur GHCR
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: VERSION doit correspondre au tag
+        run: |
+          want="v$(cat VERSION)"
+          if [ "$want" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Le fichier VERSION ($want) ne correspond pas au tag ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Image applicative --------------------------------------------------
+      - id: meta_app
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_app.outputs.tags }}
+          labels: ${{ steps.meta_app.outputs.labels }}
+
+      # --- Sidecar updater -------------------------------------------------
+      - id: meta_updater
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-updater
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: updater
+          file: updater/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_updater.outputs.tags }}
+          labels: ${{ steps.meta_updater.outputs.labels }}
+
+      # --- Release ---------------------------------------------------------
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

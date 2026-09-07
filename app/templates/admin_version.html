@@ -13,7 +13,7 @@
     <span class="ver-label">Dépôt</span>
     <span class="ver-val mono">{{ repo }}</span>
   </div>
-  {% if state.is_git %}
+  {% if mode == "git" %}
   <div class="ver-row">
     <span class="ver-label">Branche</span>
     <span class="ver-val mono">{{ state.branch }}</span>
@@ -30,23 +30,45 @@
   {% endif %}
   {% else %}
   <div class="ver-row">
-    <span class="ver-label">État</span>
-    <span class="ver-val"><span class="bdg inactif">instance non gérée par git</span></span>
+    <span class="ver-label">Déploiement</span>
+    <span class="ver-val"><span class="bdg">conteneur (image)</span></span>
+  </div>
+  {% if check and check.latest_version %}
+  <div class="ver-row">
+    <span class="ver-label">Dernière publiée</span>
+    <span class="ver-val mono">v{{ check.latest_version }}</span>
   </div>
   {% endif %}
+  {% endif %}
 </div>
+
+{% set can_update_git = mode == "git" and check and check.ok and check.behind_by and not state.dirty %}
+{% set can_update_image = mode == "image" and check and check.ok and check.up_to_date == false %}
 
 <div class="toolbar" style="margin-top:16px">
   <form method="post" action="{{ url_for('admin.version_check') }}">
     <button class="btn blue" type="submit">{{ macros.icon("refresh") }} Vérifier les mises à jour</button>
   </form>
-  {% if check and check.ok and check.behind_by and state.is_git and not state.dirty %}
+  {% if can_update_git %}
   <form method="post" action="{{ url_for('admin.version_update') }}"
-        onsubmit="return confirm('Lancer git pull --ff-only puis recharger l\'application ?');">
+        onsubmit="return confirm('Lancer git merge --ff-only puis recharger l\'application ?');">
     <button class="btn orange" type="submit">{{ macros.icon("tag") }} Mettre à jour maintenant</button>
+  </form>
+  {% elif can_update_image and updater_ready %}
+  <form method="post" action="{{ url_for('admin.version_update') }}"
+        onsubmit="return confirm('Tirer la nouvelle image et recréer les conteneurs (docker compose pull + up -d) via le sidecar ?');">
+    <button class="btn orange" type="submit">{{ macros.icon("tag") }} Mettre à jour vers v{{ check.latest_version }}</button>
   </form>
   {% endif %}
 </div>
+
+{% if can_update_image and not updater_ready %}
+<div class="card ver-check is-behind">
+  <p><strong>Mise à jour manuelle</strong> — le sidecar <span class="mono">updater</span> n'est pas
+    configuré (variable <span class="mono">UPDATE_TOKEN</span> absente). Sur l'hôte :</p>
+  <p class="mono">docker compose -f docker-compose.yml pull &amp;&amp; docker compose -f docker-compose.yml up -d</p>
+</div>
+{% endif %}
 
 {% if check %}
 <div class="card ver-check {{ 'is-error' if check.error else ('is-ok' if check.up_to_date else 'is-behind') }}">
@@ -54,9 +76,14 @@
     <p><strong>Échec de la dernière vérification</strong></p>
     <p class="hint">{{ check.error }}</p>
   {% elif check.up_to_date %}
+    {% if mode == "git" %}
     <p><strong>{{ macros.icon("check") }} À jour</strong> — l'instance est au dernier commit de
       <span class="mono">{{ check.default_branch }}</span>.</p>
-  {% else %}
+    {% else %}
+    <p><strong>{{ macros.icon("check") }} À jour</strong> — l'image correspond à la dernière
+      release publiée{% if check.latest_version %} (v{{ check.latest_version }}){% endif %}.</p>
+    {% endif %}
+  {% elif mode == "git" %}
     <p><strong>Mise à jour disponible</strong> — {{ check.behind_by }} commit(s) de retard
       sur <span class="mono">{{ check.default_branch }}</span>
       (local <span class="mono">{{ check.local_commit_short }}</span> →
@@ -66,6 +93,10 @@
       la mise à jour automatique par fast-forward échouera, résolution manuelle nécessaire.</p>
     {% endif %}
     {% if check.compare_url %}<p><a href="{{ check.compare_url }}" target="_blank" rel="noopener">Voir les changements sur GitHub ↗</a></p>{% endif %}
+  {% else %}
+    <p><strong>Mise à jour disponible</strong> — version <span class="mono">v{{ check.latest_version }}</span>
+      publiée (instance en <span class="mono">v{{ check.version }}</span>).</p>
+    {% if check.release_url %}<p><a href="{{ check.release_url }}" target="_blank" rel="noopener">Voir la release sur GitHub ↗</a></p>{% endif %}
   {% endif %}
   <p class="hint">Dernière vérification : {{ check.checked_at[:19] | replace("T", " ") }} UTC</p>
 </div>
@@ -74,9 +105,17 @@
 {% endif %}
 
 <p class="hint" style="margin-top:14px">
+  {% if mode == "git" %}
   La mise à jour exécute <span class="mono">git fetch</span> puis
   <span class="mono">git merge --ff-only origin/{{ state.branch or 'main' }}</span> dans le dossier de
   l'application, puis recharge gunicorn (SIGHUP). Elle est refusée si l'arbre de travail contient des
   modifications non commitées ou si un fast-forward est impossible.
+  {% else %}
+  Détection : dernière <em>release</em> GitHub de <span class="mono">{{ repo }}</span> comparée au
+  fichier <span class="mono">VERSION</span> de l'image. La mise à jour délègue au sidecar
+  <span class="mono">updater</span> (seul conteneur avec accès au socket Docker), qui exécute
+  <span class="mono">docker compose pull</span> puis <span class="mono">up -d</span>. Sans le sidecar,
+  la mise à jour se fait à la main sur l'hôte.
+  {% endif %}
 </p>
 {% endblock %}

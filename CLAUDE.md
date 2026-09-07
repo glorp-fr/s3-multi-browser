@@ -40,6 +40,52 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Diffusion par image GHCR + mise à jour en mode conteneur
+
+Choix validés avec l'utilisateur : cible = **auto-hébergeurs externes** (image publique GHCR comme
+canal principal) ; application de la MAJ = **bouton in-app** ; déclencheur = **tag git `v*`** ;
+plateforme **`linux/amd64`** ; accès au socket Docker via un **sidecar `updater`** dédié (pas dans
+l'app — cf. `SECURITE.md`, l'app stocke des SK chiffrées).
+
+- **`.github/workflows/release.yml`** (nouveau, seul workflow) : sur `push` de tag `v*`, vérifie que
+  `v$(cat VERSION)` == tag, construit et pousse `ghcr.io/glorp-fr/s3-multi-browser` **et**
+  `…-updater` (tags `vX.Y.Z`, `X.Y`, `latest`) via `docker/metadata-action` + `build-push-action`
+  (`GITHUB_TOKEN`, pas de PAT), puis crée une **GitHub Release** (notes auto). `Dockerfile` : label
+  `org.opencontainers.image.source`.
+- **`docker-compose.yml`** repensé pour la prod : `image:` GHCR au lieu de `build:`, service
+  `updater` (socket monté, **aucun port publié**, réseau `updater_net` `internal: true`), réseau
+  `frontend` séparé pour l'app (sortie internet + S3). **`docker-compose.override.yml`** (nouveau)
+  restaure `build: .` en dev et met `updater` derrière un profil. **`.env.example`** (nouveau) avec
+  `UPDATE_TOKEN`.
+- **`updater/`** (nouveau, image séparée `docker:27-cli` + `python3`) : `updater.py`, `http.server`
+  stdlib, `POST /update` protégé par `Authorization: Bearer $UPDATE_TOKEN`
+  (`hmac.compare_digest`), exécute **uniquement** `docker compose -f docker-compose.yml pull` puis
+  `up -d` dans `/work` (compose monté en RO). Rien du corps de requête n'est utilisé. `GET /healthz`.
+  Verrou anti-chevauchement, erreurs `OSError`/timeout renvoyées en JSON, refuse de démarrer sans
+  token.
+- **`app/version.py`** : détection du mode au runtime. Mode **git** inchangé. Mode **image**
+  (`not is_git`) : `_check_image()` lit `GET /repos/{REPO}/releases/latest` et compare le `tag_name`
+  au `VERSION` local (`_semver()`, tuple, tolère `v`, `-rc`, `+build`) ; `_apply_image()` fait un
+  `POST {UPDATER_URL}/update` avec le jeton, ou renvoie la commande manuelle si `UPDATE_TOKEN` est
+  vide / le sidecar injoignable. Cache `version_check.json` enrichi (`mode`, `latest_version`,
+  `release_url`) ; `update_available()` gère les deux modes (rétro-compatible avec l'ancien cache).
+- **`admin_routes.py`** : `version_page` passe `mode` + `updater_ready` au template ; `version_check`
+  et `version_update` ne présument plus le mode git (plus de `KeyError` sur `behind_by` / `old` /
+  `new`). **`admin_version.html`** : branché sur `mode`, bouton *Mettre à jour vers vX.Y.Z* en mode
+  image si `updater_ready`, sinon encart avec la commande manuelle ; carte et pied de page adaptés.
+- **README** : section « Lancer avec Docker » réécrite (pull GHCR, `docker compose`, sidecar +
+  **encadré sécurité** sur le socket, procédure de publication par tag) ; table des variables
+  d'env complétée (`UPDATE_TOKEN`, `UPDATER_URL`, `UPDATE_REPO` étendu aux releases).
+- **Tests** (scripts client Flask, non versionnés) : `_semver`, `check_update` mode image
+  (retard / à jour / 404 sans release), `apply_update` mode image (sans token → commande manuelle ;
+  sidecar OK ; sidecar renvoie un échec ; sidecar injoignable), rendu `admin_version.html` dans les
+  deux modes (badge conteneur, bouton visible seulement avec token), POST `/admin/version/*` sans
+  500. Mode git : page rendue, régression OK. Sidecar : `healthz`, 403 sans/mauvais token, erreur
+  gracieuse si `docker` absent.
+
+**Reste à faire manuellement après le 1er tag** : rendre le package GHCR **public**
+(Settings du package sur GitHub) pour le pull anonyme.
+
 ### Application de SECURITE.md — Module « Sauvegarde de configuration » — v0.7.x
 
 Livré depuis un **clone séparé** poussé sur GitHub, sans toucher au gunicorn en place :

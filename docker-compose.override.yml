@@ -1,0 +1,13 @@
+# Fusionné automatiquement par `docker compose up` (développement local).
+# - construit l'image depuis le Dockerfile au lieu de tirer celle de GHCR
+# - garde le sidecar `updater` à l'arrêt (profil non activé)
+#
+# La prod ignore ce fichier : `docker compose -f docker-compose.yml up -d`.
+
+services:
+  multi-s3-browser:
+    build: .
+    image: multi-s3-browser:local
+
+  updater:
+    profiles: ["with-updater"]

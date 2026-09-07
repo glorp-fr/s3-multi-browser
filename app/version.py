@@ -1,14 +1,16 @@
 """Version display + self-update against GitHub.
 
-- Current version = the `VERSION` file at the repo root (semver), shown together with the
-  short git SHA and commit date of the running checkout.
-- "Check for update" = GitHub API compare of the local HEAD against the tip of the
-  default branch of the configured repo. No release/tag process required.
-- "Update" = `git fetch` + `git merge --ff-only origin/<branch>` on the checkout, then a
-  graceful gunicorn reload (SIGHUP to the master) so the new code is loaded.
+Deux modes de déploiement, détectés au runtime :
 
-Guards: refuses if the instance is not a git checkout, if the working tree is dirty, or
-if a fast-forward is not possible. stdlib only (urllib) — no extra dependency.
+- **git checkout** (gunicorn sur l'hôte) : "check" = compare GitHub de HEAD contre la tête
+  de la branche par défaut ; "update" = `git fetch` + `git merge --ff-only` puis reload
+  gracieux de gunicorn (SIGHUP). Refuse si arbre sale ou fast-forward impossible.
+- **image** (conteneur, pas de `.git`) : "check" = dernière *release* GitHub comparée au
+  fichier `VERSION` (semver) ; "update" = POST au sidecar `updater` (`UPDATER_URL` +
+  `UPDATE_TOKEN`), qui fait `docker compose pull && up -d`. Sans jeton, le bouton affiche
+  la commande manuelle.
+
+stdlib only (urllib) — no extra dependency.
 """
 import json
 import os
@@ -27,6 +29,10 @@ CACHE_PATH = os.path.join(DATA_DIR, "version_check.json")
 REPO = os.environ.get("UPDATE_REPO", "glorp-fr/s3-multi-browser")
 AUTO_RELOAD = os.environ.get("UPDATE_AUTO_RELOAD", "1") == "1"
 
+# Mode image : sidecar de mise à jour.
+UPDATER_URL = os.environ.get("UPDATER_URL", "http://updater:9000")
+UPDATE_TOKEN = os.environ.get("UPDATE_TOKEN", "")
+
 # VERSION only changes on update (which reloads the process), so read it once.
 try:
     with open(VERSION_FILE, "r", encoding="utf-8") as _f:
@@ -37,6 +43,19 @@ except OSError:
 
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _semver(s):
+    """'v0.8.1', '0.8.1-rc1', '0.8' -> (0, 8, 1) / (0, 8, 0). Non numérique -> 0."""
+    head = (s or "0").lstrip("vV").split("-")[0].split("+")[0]
+    parts = []
+    for chunk in head.split("."):
+        try:
+            parts.append(int(chunk))
+        except ValueError:
+            parts.append(0)
+    parts += [0, 0, 0]
+    return tuple(parts[:3])
 
 
 def _git(*args, timeout=20):
@@ -95,15 +114,14 @@ def check_update():
     """Query GitHub, cache and return the result dict."""
     info = local_state()
     result = {
-        "checked_at": _now(), "ok": False, "error": None,
+        "checked_at": _now(), "ok": False, "error": None, "mode": "git",
         "up_to_date": None, "behind_by": None, "ahead_by": None, "diverged": False,
         "remote_commit_short": None, "compare_url": None, "default_branch": None,
         "repo": REPO, "local_commit_short": info["commit_short"], "version": VERSION,
+        "latest_version": None, "release_url": None,
     }
     if not info["is_git"] or not info["commit"]:
-        result["error"] = "Instance non gérée par git : mise à jour automatique indisponible."
-        _cache_write(result)
-        return result
+        return _check_image(result)
     try:
         repo = _api(f"/repos/{REPO}")
         branch = repo.get("default_branch") or info["branch"] or "main"
@@ -142,14 +160,43 @@ def check_update():
     return result
 
 
+def _check_image(result):
+    """Mode conteneur : compare la dernière release GitHub au fichier VERSION."""
+    result["mode"] = "image"
+    try:
+        rel = _api(f"/repos/{REPO}/releases/latest")
+    except urlerror.HTTPError as exc:
+        if exc.code == 404:
+            result["error"] = (f"Aucune release publiée sur {REPO} : "
+                               "impossible de déterminer la dernière version.")
+        elif exc.code == 403:
+            result["error"] = "GitHub a répondu 403 : quota API atteint (définir GITHUB_TOKEN)."
+        else:
+            result["error"] = f"GitHub a répondu {exc.code} ({exc.reason})."
+        _cache_write(result)
+        return result
+    except (urlerror.URLError, TimeoutError, ValueError) as exc:
+        result["error"] = f"Impossible de contacter GitHub : {exc}"
+        _cache_write(result)
+        return result
+
+    latest = (rel.get("tag_name") or "").strip().lstrip("vV")
+    result.update(
+        ok=True,
+        latest_version=latest or None,
+        release_url=rel.get("html_url"),
+        up_to_date=(_semver(latest) <= _semver(VERSION)),
+    )
+    _cache_write(result)
+    return result
+
+
 # --- apply ----------------------------------------------------------------
 
 def apply_update():
     info = local_state()
     if not info["is_git"]:
-        return {"ok": False, "changed": False,
-                "message": "Instance non gérée par git : `git pull` impossible. "
-                           "Mettez à jour l'hôte puis reconstruisez l'image."}
+        return _apply_image()
     if info["branch"] == "HEAD":
         return {"ok": False, "changed": False,
                 "message": "HEAD détaché : placez-vous sur une branche avant de mettre à jour."}
@@ -180,6 +227,47 @@ def apply_update():
     check_update()  # refresh the cached banner
     return {"ok": True, "changed": changed, "old": old, "new": new, "message": msg,
             "reload": changed and _can_reload()}
+
+
+_MANUAL_CMD = ("docker compose -f docker-compose.yml pull && "
+               "docker compose -f docker-compose.yml up -d")
+
+
+def _apply_image():
+    """Mode conteneur : délègue au sidecar `updater`, ou renvoie la commande manuelle."""
+    latest = (cached_check() or {}).get("latest_version")
+    toward = f" vers la version {latest}" if latest else ""
+    if not UPDATE_TOKEN:
+        return {"ok": False, "changed": False,
+                "message": (f"Instance en conteneur : mise à jour{toward} non automatisée "
+                            f"(sidecar `updater` absent). Sur l'hôte : {_MANUAL_CMD}")}
+    try:
+        req = urlrequest.Request(
+            UPDATER_URL.rstrip("/") + "/update", method="POST", data=b"{}",
+            headers={"Authorization": f"Bearer {UPDATE_TOKEN}",
+                     "Content-Type": "application/json"},
+        )
+        with urlrequest.urlopen(req, timeout=600) as resp:
+            payload = json.load(resp)
+    except urlerror.HTTPError as exc:
+        detail = ""
+        try:
+            detail = " " + (json.load(exc).get("message") or "")
+        except Exception:
+            pass
+        return {"ok": False, "changed": False,
+                "message": f"Le service de mise à jour a répondu {exc.code}.{detail}"}
+    except (urlerror.URLError, TimeoutError, ValueError) as exc:
+        return {"ok": False, "changed": False,
+                "message": (f"Service de mise à jour injoignable ({exc}). "
+                            f"Mise à jour manuelle : {_MANUAL_CMD}")}
+
+    if not payload.get("ok"):
+        return {"ok": False, "changed": False,
+                "message": "Échec de la mise à jour : " + (payload.get("message") or "raison inconnue")}
+    return {"ok": True, "changed": True, "reload": False,
+            "message": (f"Mise à jour{toward or ' vers la dernière version'} lancée. "
+                        "L'application redémarre — réactualisez la page dans ~20 s.")}
 
 
 def _can_reload():
@@ -225,4 +313,8 @@ def _cache_write(result):
 
 def update_available():
     c = cached_check()
-    return bool(c and c.get("ok") and c.get("behind_by"))
+    if not c or not c.get("ok"):
+        return False
+    if c.get("mode") == "image":
+        return c.get("up_to_date") is False
+    return bool(c.get("behind_by"))

@@ -46,13 +46,16 @@ chiffré côté serveur.
   bouton **Sauvegarder maintenant** pour un déclenchement synchrone. Garder **un seul worker
   gunicorn** (sinon chaque worker planifie sa propre sauvegarde).
 - **Version & mises à jour** (`Administration → Version`) : version courante = fichier `VERSION`
-  (semver) + SHA court et date du commit du checkout. Bouton **Vérifier les mises à jour** = comparaison
-  via l'API GitHub du commit local avec le dernier commit de la branche par défaut du dépôt
-  (`glorp-fr/s3-multi-browser` par défaut, cf. `UPDATE_REPO`). Bouton **Mettre à jour** = `git fetch`
-  puis `git merge --ff-only` sur le dossier de l'app, puis rechargement gracieux de gunicorn (SIGHUP).
-  Refusé si l'arbre de travail est sale, si ce n'est pas un dépôt git, ou si le fast-forward est
-  impossible. La version et un pictogramme « MAJ dispo » sont affichés en pied de barre latérale pour
-  tous les utilisateurs.
+  (semver). Deux modes selon le déploiement :
+  - **checkout git** (gunicorn sur l'hôte) : *Vérifier* compare le commit local au dernier commit de
+    la branche par défaut du dépôt (`UPDATE_REPO`, défaut `glorp-fr/s3-multi-browser`) ; *Mettre à
+    jour* fait `git fetch` + `git merge --ff-only` + rechargement gracieux de gunicorn (SIGHUP).
+    Refusé si l'arbre est sale ou si le fast-forward est impossible.
+  - **image** (conteneur, pas de `.git`) : *Vérifier* compare `VERSION` à la dernière **release**
+    GitHub ; *Mettre à jour* délègue au sidecar `updater` (`docker compose pull && up -d`). Sans le
+    sidecar, le bouton affiche la commande à lancer sur l'hôte.
+  La version et un pictogramme « MAJ dispo » sont affichés en pied de barre latérale pour tous les
+  utilisateurs.
 
 ## Configuration (variables d'environnement)
 
@@ -63,9 +66,11 @@ chiffré côté serveur.
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | au premier démarrage | Crée le premier compte admin si aucun utilisateur n'existe encore. |
 | `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json`, `usage_cache.json`, `audit.jsonl` et `version_check.json` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
 | `MAX_UPLOAD_MB` | non | Taille max d'upload en Mo (défaut : 512). |
-| `UPDATE_REPO` | non | Dépôt GitHub `owner/name` interrogé pour les mises à jour (défaut : `glorp-fr/s3-multi-browser`). |
+| `UPDATE_REPO` | non | Dépôt GitHub `owner/name` interrogé pour les mises à jour — commits (mode git) ou releases (mode image). Défaut : `glorp-fr/s3-multi-browser`. |
 | `GITHUB_TOKEN` | non | Jeton pour la vérification de mise à jour si le dépôt est privé ou pour éviter le quota API anonyme. Lecture seule (`contents:read`) suffit. |
-| `UPDATE_AUTO_RELOAD` | non | `1` (défaut) : recharge gunicorn automatiquement après une mise à jour appliquée. `0` : ne recharge pas (redémarrage manuel). |
+| `UPDATE_AUTO_RELOAD` | non | Mode git : `1` (défaut) recharge gunicorn automatiquement après une mise à jour ; `0` = redémarrage manuel. |
+| `UPDATE_TOKEN` | non | Mode image : jeton partagé avec le sidecar `updater`. Vide = bouton *Mettre à jour* remplacé par la commande manuelle. |
+| `UPDATER_URL` | non | Mode image : URL du sidecar (défaut `http://updater:9000`, résolu sur le réseau compose). |
 
 ## Lancer en local
 
@@ -86,21 +91,54 @@ Outscale et AWS sont créés automatiquement au premier démarrage ; ajouter un 
 
 ## Lancer avec Docker
 
+Image publiée sur GHCR à chaque tag `vX.Y.Z` : `ghcr.io/glorp-fr/s3-multi-browser` (`linux/amd64`),
+tags `vX.Y.Z`, `X.Y`, `latest`.
+
 ```bash
-docker build -t multi-s3-browser .
 docker run -p 5000:5000 \
   -e APP_MASTER_KEY="change-me" \
   -e ADMIN_USERNAME="admin" \
   -e ADMIN_PASSWORD="change-me-too" \
   -v multi-s3-browser-data:/app/data \
-  multi-s3-browser
+  ghcr.io/glorp-fr/s3-multi-browser:latest
 ```
 
-Ou via `docker-compose.yml` (variables lues depuis un fichier `.env` local, non versionné) :
+### docker compose
+
+`cp .env.example .env`, renseigner, puis :
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml up -d
 ```
+
+En développement, `docker compose up --build` suffit : `docker-compose.override.yml` (fusionné
+automatiquement) reconstruit l'image localement et laisse le sidecar `updater` de côté.
+
+### Mise à jour depuis l'interface (sidecar `updater`)
+
+Le `docker-compose.yml` inclut un service `updater` qui permet le bouton *Mettre à jour* de
+`Administration → Version` : l'app le contacte sur le réseau interne, il exécute
+`docker compose pull` puis `up -d`.
+
+> ⚠️ **Compromis de sécurité.** `updater` monte `/var/run/docker.sock` : accès Docker = équivalent
+> root sur l'hôte. Le risque est circonscrit — le conteneur n'a **aucun code applicatif**, **aucun
+> port publié**, vit sur un réseau `internal` (pas d'accès entrant hôte ni sortie internet), et le
+> seul endpoint est protégé par `UPDATE_TOKEN` (`openssl rand -hex 32`). L'app applicative, elle, ne
+> voit jamais le socket. Pour refuser ce compromis : retirer le service `updater` et laisser
+> `UPDATE_TOKEN` vide — les mises à jour se font alors à la main
+> (`docker compose -f docker-compose.yml pull && up -d`).
+
+### Publier une version
+
+Bump `VERSION`, commit, puis :
+
+```bash
+git tag v$(cat VERSION) && git push origin v$(cat VERSION)
+```
+
+Le workflow `.github/workflows/release.yml` vérifie que le tag correspond à `VERSION`, construit et
+pousse les images app + `updater`, et crée la GitHub Release lue par les instances en mode image.
 
 ## Notes techniques
 

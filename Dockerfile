@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Lie l'image au dépôt sur GHCR (page du package, provenance, pull public).
+LABEL org.opencontainers.image.source="https://github.com/glorp-fr/s3-multi-browser"
+LABEL org.opencontainers.image.description="Multi S3 Browser — navigateur S3 multi-comptes (Flask)"
+
 WORKDIR /app
 
 COPY requirements.txt .

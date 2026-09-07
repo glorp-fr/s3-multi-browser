@@ -1,6 +1,19 @@
+# Déploiement production : images publiées sur GHCR.
+#   docker compose -f docker-compose.yml pull
+#   docker compose -f docker-compose.yml up -d
+#
+# En local, docker-compose.override.yml (fusionné automatiquement par `docker compose up`)
+# remplace l'image par un build local et laisse le sidecar `updater` de côté.
+#
+# Le service `updater` permet la mise à jour depuis Administration → Version. C'est le
+# SEUL conteneur qui voit le socket Docker ; il n'expose aucun port et vit sur un réseau
+# interne. Voir README « Déploiement Docker » pour le compromis de sécurité. Pour s'en
+# passer : supprimer le service `updater` et la variable UPDATE_TOKEN — le bouton
+# affichera alors la commande de mise à jour manuelle.
+
 services:
   multi-s3-browser:
-    build: .
+    image: ghcr.io/glorp-fr/s3-multi-browser:latest
     ports:
       - "5000:5000"
     environment:
@@ -8,9 +21,30 @@ services:
       FLASK_SECRET_KEY: "${FLASK_SECRET_KEY}"
       ADMIN_USERNAME: "${ADMIN_USERNAME}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
+      UPDATE_TOKEN: "${UPDATE_TOKEN:-}"
+      UPDATER_URL: "http://updater:9000"
     volumes:
       - multi-s3-browser-data:/app/data
     restart: unless-stopped
+    networks: [frontend, updater_net]
+
+  updater:
+    image: ghcr.io/glorp-fr/s3-multi-browser-updater:latest
+    environment:
+      UPDATE_TOKEN: "${UPDATE_TOKEN:-}"
+      COMPOSE_DIR: /work
+      COMPOSE_FILE: docker-compose.yml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/work/docker-compose.yml:ro
+      - ./.env:/work/.env:ro
+    restart: unless-stopped
+    networks: [updater_net]   # internal: ni entrée hôte, ni sortie internet
 
 volumes:
   multi-s3-browser-data:
+
+networks:
+  frontend: {}
+  updater_net:
+    internal: true
