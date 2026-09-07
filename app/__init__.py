@@ -2,7 +2,7 @@ import os
 
 from flask import Flask, g
 
-from . import auth, storage, usage_cache
+from . import auth, storage, usage_cache, version
 
 
 def create_app():
@@ -21,7 +21,11 @@ def create_app():
 
     @app.context_processor
     def _inject_globals():
-        return {"current_user": g.get("user")}
+        return {
+            "current_user": g.get("user"),
+            "app_version": version.VERSION,
+            "update_available": version.update_available(),
+        }
 
     from .routes.auth_routes import bp as auth_bp
     from .routes.admin_routes import bp as admin_bp

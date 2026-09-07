@@ -30,7 +30,16 @@
     <a class="navlink" href="{{ url_for('admin.accounts') }}">{{ macros.icon("shield") }} Comptes</a>
     <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
     <a class="navlink" href="{{ url_for('admin.logs') }}">{{ macros.icon("activity") }} Logs</a>
+    <a class="navlink" href="{{ url_for('admin.version_page') }}">{{ macros.icon("tag") }} Version{% if update_available %} <span class="upd-dot" title="Mise à jour disponible">●</span>{% endif %}</a>
     {% endif %}
+    <div class="sidebar-foot">
+      {% if current_user.role == "admin" %}
+      <a href="{{ url_for('admin.version_page') }}" class="mono">v{{ app_version }}</a>
+      {% else %}
+      <span class="mono">v{{ app_version }}</span>
+      {% endif %}
+      {% if update_available %}<span class="upd-tag" title="Une mise à jour est disponible">MAJ dispo</span>{% endif %}
+    </div>
   </nav>
   <main class="content{% block content_wide %}{% endblock %}">
     {% include "_flash.html" %}

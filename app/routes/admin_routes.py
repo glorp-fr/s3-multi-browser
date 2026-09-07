@@ -1,9 +1,58 @@
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
-from .. import audit, storage
+from .. import audit, storage, version
 from ..auth import ROLES, role_required
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+# --- Version / mises à jour ----------------------------------------------
+
+@bp.route("/version")
+@role_required("admin")
+def version_page():
+    return render_template(
+        "admin_version.html",
+        state=version.local_state(),
+        check=version.cached_check(),
+        repo=version.REPO,
+    )
+
+
+@bp.route("/version/check", methods=["POST"])
+@role_required("admin")
+def version_check():
+    result = version.check_update()
+    if result.get("error"):
+        audit.log("admin", "version_check", f"Vérification MAJ échouée : {result['error']}", status="fail")
+        flash(result["error"], "error")
+    elif result.get("up_to_date"):
+        audit.log("admin", "version_check", "Vérification MAJ : à jour")
+        flash("L'application est à jour.", "success")
+    else:
+        audit.log("admin", "version_check",
+                  f"Vérification MAJ : {result['behind_by']} commit(s) de retard")
+        flash(f"Mise à jour disponible : {result['behind_by']} commit(s) de retard.", "success")
+    return redirect(url_for("admin.version_page"))
+
+
+@bp.route("/version/update", methods=["POST"])
+@role_required("admin")
+def version_update():
+    result = version.apply_update()
+    if not result["ok"]:
+        audit.log("admin", "version_update", f"Mise à jour refusée : {result['message']}", status="fail")
+        flash(result["message"], "error")
+    elif not result["changed"]:
+        audit.log("admin", "version_update", "Mise à jour : déjà à jour")
+        flash(result["message"], "success")
+    else:
+        audit.log("admin", "version_update",
+                  f"Mise à jour appliquée {result['old'][:7]} → {result['new'][:7]}"
+                  + (" (rechargement en cours)" if result.get("reload") else ""),
+                  target=result["new"][:7])
+        flash(result["message"], "success")
+    return redirect(url_for("admin.version_page"))
 
 
 # --- Logs ------------------------------------------------------------------

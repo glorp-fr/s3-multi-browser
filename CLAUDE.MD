@@ -95,11 +95,46 @@ Application **module par module** ; premier module livré : **Logs**.
   `cat`), CRUD admin audité, et instrumentation S3 (buckets/objects/download/create/mkdir/upload/
   delete objet+dossier/delete bucket) — plus vérif qu'aucun secret ne fuit dans les logs.
 
+### Application de SECURITE.MD — Module « Version & mises à jour »
+
+Choix validés avec l'utilisateur : source de version = **fichier `VERSION`** (semver) + SHA git ;
+détection de MAJ = **dernier commit de la branche par défaut** sur GitHub ; bouton de MAJ =
+**`git pull --ff-only` + reload gunicorn automatique**.
+
+- **`app/version.py`** (stdlib uniquement, pas de nouvelle dépendance — `urllib`) :
+  - `VERSION` = fichier `VERSION` à la racine, lu **une fois** à l'import (ne change qu'à une MAJ,
+    qui recharge le process). `local_state()` = version + `git_info()` (branche, commit, date, arbre
+    sale) via `git -C <root>`.
+  - `check_update()` : `GET /repos/{REPO}` pour la branche par défaut, puis
+    `GET /repos/{REPO}/compare/{local}...{branche}` → `behind_by`, SHA distant, lien de comparaison.
+    `REPO` = env `UPDATE_REPO` (défaut `glorp-fr/s3-multi-browser`). En-tête `Authorization: Bearer`
+    si `GITHUB_TOKEN` défini (dépôt privé / quota). Erreurs réseau/HTTP (403/404) rattrapées en
+    message lisible. Résultat mis en cache dans `data/version_check.json`.
+  - `apply_update()` : garde-fous (pas un dépôt git / HEAD détaché / arbre sale / ff impossible →
+    refus explicite), sinon `git fetch --prune` + `git merge --ff-only origin/<branche>`, puis
+    `_schedule_reload()` = `SIGHUP` au master gunicorn **1,5 s après** la réponse (worker recréé =
+    nouveau code chargé, on n'utilise pas `--preload`). Reload conditionné à `"gunicorn" in
+    sys.modules` et `UPDATE_AUTO_RELOAD != "0"`.
+- **Routes** (`admin_routes.py`, `@role_required("admin")`) : `GET /admin/version` (page),
+  `POST /admin/version/check`, `POST /admin/version/update`. Les deux POST sont **audités**
+  (`admin` / `version_check` / `version_update`, avec `old → new`).
+- **UI** : `admin_version.html` (carte version + git, bloc résultat coloré à jour / en retard /
+  erreur, bouton « Mettre à jour » affiché seulement si `behind_by > 0` et arbre propre). Pied de
+  **barre latérale** : `v<version>` + pastille « MAJ dispo » (lue du cache) visible **pour tous les
+  utilisateurs** (exigence page user de SECURITE.MD). Icône `tag` ajoutée à `_macros.html`.
+- **`Dockerfile`** : `COPY VERSION .`. En conteneur il n'y a pas de `.git` → `apply_update()`
+  renvoie le message « instance non gérée par git » (comportement attendu ; MAJ = rebuild d'image).
+- **Contexte Jinja** : `app/__init__.py` injecte `app_version` et `update_available` dans tous les
+  templates.
+- **Tests** (script non versionné) : lecture `VERSION`, `git_info`, `check_update` (en retard / à
+  jour / HTTPError 404), garde-fous `apply_update` (arbre sale, pas de git, ff impossible), happy
+  path avec git mocké (enchaînement fetch → merge --ff-only), routes admin + audit, version visible
+  en sidebar pour un non-admin.
+
 **Reste à appliquer de SECURITE.MD** (dans l'ordre convenu) : couche **groupes** (un groupe porte
 un rôle + une liste de comptes S3 ; utilisateurs rattachés à des groupes), **HTTPS / Let's Encrypt**
 (approche non tranchée : Caddy dans le compose vs TLS géré en amont), **désactivation de compte**
-(vs suppression), **gestion de version + bouton de mise à jour**, **module de sauvegarde de
-configuration** (SMB / S3, planification, rétention).
+(vs suppression), **module de sauvegarde de configuration** (SMB / S3, planification, rétention).
 
 ### Étape 1 — Scaffold initial (voir commit `72418ff`)
 
@@ -185,17 +220,19 @@ app/
   storage.py          # JSON db (users/accounts/providers), chiffrement Fernet, migrate()
   usage_cache.py       # cache volumétrie (data/usage_cache.json), règle des 24h, format_size()
   audit.py             # journal d'audit JSONL (data/audit.jsonl), log() / tail() / connection_history()
+  version.py           # VERSION + git_info(), check_update() (API GitHub), apply_update() (git ff + SIGHUP)
   s3client.py           # boto3 client, endpoint = provider.endpoint_template.format(region=...)
   auth.py                # session, login_required, role_required, can_write, accessible_accounts
   routes/
     auth_routes.py       # /login /logout  (+ audit auth)
     admin_routes.py       # /admin/providers, /admin/accounts, /admin/users (CRUD, audités)
-                          #   + /admin/logs (page) et /admin/logs/tail (JSON live tail)
+                          #   + /admin/logs (+ /logs/tail), /admin/version (+ /version/check, /version/update)
     explorer_routes.py     # /accounts, buckets, objets, upload/download/delete, usage/refresh (audités)
   templates/             # Jinja2, un template par page + _macros.html (icônes SVG inline)
-                          #   admin_logs.html : onglets journal live + historique connexions
-  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs)
-data/                   # gitignored — db.json (chiffré) + usage_cache.json + audit.jsonl(.1), au runtime
+                          #   admin_logs.html (journal live + connexions), admin_version.html
+  static/style.css        # CSS transcrit de CHARTE_GRAPHIQUE.MD (+ styles .log-view / .tabs / .ver-*)
+VERSION                 # numéro de version semver, affiché dans l'UI, COPY dans l'image Docker
+data/                   # gitignored — db.json (chiffré), usage_cache.json, audit.jsonl(.1), version_check.json
 ```
 
 ## Déploiement / validation

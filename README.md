@@ -26,6 +26,14 @@ chiffré côté serveur.
   toutes les 3 s) avec recherche, filtre par catégorie et bouton **Pause**, plus un onglet **historique
   des connexions**. Aucun secret ni mot de passe n'est journalisé. Stocké dans `data/audit.jsonl`
   (JSON Lines, plafonné à 5 Mo puis une rotation `.1`).
+- **Version & mises à jour** (`Administration → Version`) : version courante = fichier `VERSION`
+  (semver) + SHA court et date du commit du checkout. Bouton **Vérifier les mises à jour** = comparaison
+  via l'API GitHub du commit local avec le dernier commit de la branche par défaut du dépôt
+  (`glorp-fr/s3-multi-browser` par défaut, cf. `UPDATE_REPO`). Bouton **Mettre à jour** = `git fetch`
+  puis `git merge --ff-only` sur le dossier de l'app, puis rechargement gracieux de gunicorn (SIGHUP).
+  Refusé si l'arbre de travail est sale, si ce n'est pas un dépôt git, ou si le fast-forward est
+  impossible. La version et un pictogramme « MAJ dispo » sont affichés en pied de barre latérale pour
+  tous les utilisateurs.
 
 ## Configuration (variables d'environnement)
 
@@ -34,8 +42,11 @@ chiffré côté serveur.
 | `APP_MASTER_KEY` | oui | Clé utilisée pour chiffrer les Secret Keys des comptes en base. À générer une fois et à garder stable (sa perte rend les comptes existants illisibles). |
 | `FLASK_SECRET_KEY` | recommandé | Clé de signature des sessions Flask. Par défaut réutilise `APP_MASTER_KEY`. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | au premier démarrage | Crée le premier compte admin si aucun utilisateur n'existe encore. |
-| `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json`, `usage_cache.json` et `audit.jsonl` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
+| `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json`, `usage_cache.json`, `audit.jsonl` et `version_check.json` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
 | `MAX_UPLOAD_MB` | non | Taille max d'upload en Mo (défaut : 512). |
+| `UPDATE_REPO` | non | Dépôt GitHub `owner/name` interrogé pour les mises à jour (défaut : `glorp-fr/s3-multi-browser`). |
+| `GITHUB_TOKEN` | non | Jeton pour la vérification de mise à jour si le dépôt est privé ou pour éviter le quota API anonyme. Lecture seule (`contents:read`) suffit. |
+| `UPDATE_AUTO_RELOAD` | non | `1` (défaut) : recharge gunicorn automatiquement après une mise à jour appliquée. `0` : ne recharge pas (redémarrage manuel). |
 
 ## Lancer en local
 
