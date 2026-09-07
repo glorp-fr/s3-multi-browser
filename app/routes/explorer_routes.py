@@ -8,7 +8,7 @@ from flask import (
 )
 
 from .. import audit, storage, usage_cache
-from ..auth import accessible_accounts, can_access_account, can_write, login_required
+from ..auth import accessible_accounts, account_permissions, can, can_access_account, login_required
 from ..s3client import get_client
 
 bp = Blueprint("explorer", __name__)
@@ -110,7 +110,7 @@ def buckets(account_id):
 
     return render_template(
         "buckets.html", account=account, provider=provider, buckets=buckets_view,
-        usage_summary=usage_summary, can_write=can_write(g.user),
+        usage_summary=usage_summary, perms=account_permissions(g.user, account_id),
     )
 
 
@@ -118,7 +118,7 @@ def buckets(account_id):
 @login_required
 def bucket_new(account_id):
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
+    if not can(g.user, account_id, "bucket_admin"):
         abort(403)
     name = request.form.get("name", "").strip()
     if not name:
@@ -143,7 +143,7 @@ def bucket_new(account_id):
 @login_required
 def bucket_delete(account_id, bucket):
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
+    if not can(g.user, account_id, "bucket_admin"):
         abort(403)
     client = get_client(account)
     try:
@@ -163,9 +163,8 @@ def bucket_delete(account_id, bucket):
 @bp.route("/accounts/<account_id>/buckets/<bucket>/usage/refresh", methods=["POST"])
 @login_required
 def bucket_usage_refresh(account_id, bucket):
+    # Recomputing volumetry is a read (s3_read); any user with access to the account may do it.
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
-        abort(403)
     entry = usage_cache.get(account_id, bucket)
     if not usage_cache.is_refresh_allowed(entry):
         next_at = usage_cache.next_refresh_at(entry)
@@ -232,7 +231,7 @@ def bucket_bulk(account_id):
         return back
 
     if action == "delete":
-        if not can_write(g.user):
+        if not can(g.user, account_id, "bucket_admin"):
             abort(403)
         done = errors = 0
         for name in names:
@@ -322,7 +321,7 @@ def objects(account_id, bucket):
         "explorer.html",
         account=account, bucket=bucket, prefix=prefix, query=query,
         folders=folders, files=files_page, breadcrumbs=breadcrumbs,
-        can_write=can_write(g.user),
+        perms=account_permissions(g.user, account_id),
         page=page, per_page=per_page, total_pages=total_pages, total_files=total_files,
         per_page_options=PER_PAGE_OPTIONS,
     )
@@ -332,7 +331,7 @@ def objects(account_id, bucket):
 @login_required
 def upload(account_id, bucket):
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
+    if not can(g.user, account_id, "upload"):
         abort(403)
     prefix = request.form.get("prefix", "")
     client = get_client(account)
@@ -361,7 +360,7 @@ def upload(account_id, bucket):
 @login_required
 def mkdir(account_id, bucket):
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
+    if not can(g.user, account_id, "upload"):
         abort(403)
     prefix = request.form.get("prefix", "")
     name = request.form.get("name", "").strip().strip("/")
@@ -387,6 +386,8 @@ def mkdir(account_id, bucket):
 @login_required
 def download(account_id, bucket):
     account = _get_authorized_account(account_id)
+    if not can(g.user, account_id, "download"):
+        abort(403)
     key = request.args.get("key", "")
     client = get_client(account)
     try:
@@ -410,7 +411,7 @@ def download(account_id, bucket):
 @login_required
 def delete_object(account_id, bucket):
     account = _get_authorized_account(account_id)
-    if not can_write(g.user):
+    if not can(g.user, account_id, "delete"):
         abort(403)
     key = request.form.get("key", "")
     prefix = request.form.get("prefix", "")
@@ -472,7 +473,7 @@ def object_bulk(account_id, bucket):
     client = get_client(account)
 
     if action == "delete":
-        if not can_write(g.user):
+        if not can(g.user, account_id, "delete"):
             abort(403)
         deleted = errors = 0
         try:
@@ -494,6 +495,8 @@ def object_bulk(account_id, bucket):
         return back
 
     if action == "download":
+        if not can(g.user, account_id, "download"):
+            abort(403)
         try:
             obj_keys = _expand_keys(client, bucket, keys)
         except ClientError as exc:

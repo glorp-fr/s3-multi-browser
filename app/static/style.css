@@ -178,6 +178,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: .02em;
 }
 .bdg.admin { background: #cffafe; color: #0e7490; }
+.bdg.user { background: #e0f2fe; color: #075985; }
 .bdg.operateur { background: #e0f2fe; color: #075985; }
 .bdg.readonly { background: #f1f5f9; color: #475569; }
 .bdg.actif, .bdg.success { background: var(--ok-bg); color: var(--ok); }

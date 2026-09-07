@@ -17,7 +17,7 @@
   {% endif %}
 </div>
 
-{% if can_write %}
+{% if 'bucket_admin' in perms %}
 <form class="inline-form" method="post" action="{{ url_for('explorer.bucket_new', account_id=account.id) }}">
   <input type="text" name="name" placeholder="nom-du-bucket" required pattern="[a-z0-9.\-]{3,63}">
   <button class="btn blue sm" type="submit">{{ macros.icon("plus") }} Créer un bucket</button>
@@ -30,7 +30,7 @@
     <button class="btn ghost sm" type="submit" name="action" value="usage_refresh" data-bulk-action disabled>
       {{ macros.icon("refresh") }} Actualiser la volumétrie
     </button>
-    {% if can_write %}
+    {% if 'bucket_admin' in perms %}
     <button class="btn red sm" type="submit" name="action" value="delete" data-bulk-action disabled
             data-bulk-confirm="Supprimer les %n bucket(s) sélectionné(s) ? Action irréversible.">
       {{ macros.icon("trash") }} Supprimer

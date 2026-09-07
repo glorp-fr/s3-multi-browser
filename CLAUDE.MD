@@ -40,6 +40,60 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Application de SECURITE.MD — Gestion des groupes (RBAC) — v0.6.0
+
+Remplacement du modèle d'autorisation « rôle global + liste de comptes » par un modèle
+**groupes**. Choix validés avec l'utilisateur avant implémentation :
+
+- **Un groupe = unité de contrôle d'accès porteuse des droits.** `user → groupe(s) → comptes S3
+  + droits`. Pas de « groupe de comptes » séparé.
+- **Droits fins portés par le groupe** : `download`, `upload`, `delete`, `bucket_admin`
+  (créer/supprimer un bucket). `list`/navigation (lister les buckets, parcourir, rechercher,
+  recalculer la volumétrie) est **implicite** dès qu'un groupe couvre le compte — pas de case à
+  cocher. Un groupe sans droit = lecture seule.
+- **Rôle global supprimé** : `operateur` / `readonly` disparaissent. Il reste un flag
+  `is_admin` (super-admin : accès total + pages d'administration, groupes ignorés). Tout accès
+  d'un non-admin passe par ses groupes.
+- **Multi-appartenance** : un utilisateur peut être dans plusieurs groupes ; accès et droits
+  effectifs = **union** des groupes.
+- **Portée des comptes d'un groupe** : liste explicite **ou** case « tous les comptes »
+  (équivalent de l'ancien `*`, inclut les comptes futurs).
+- **Migration** (`storage.migrate()`, idempotente) : chaque user perd `role` (→ `is_admin =
+  role == "admin"`) et `account_ids` (supprimé, **pas** de reconstruction auto en groupe — décidé
+  ainsi, les 2 users existants étaient admin), gagne `group_ids: []`. Sauvegarde de `data/db.json`
+  faite avant test dans `data/db.json.bak-pre-groups`.
+
+Détails d'implémentation :
+
+- **`storage.py`** : `GROUP_PERMISSIONS`, collection `groups` dans `db.json`
+  (`{id, name, permissions[], all_accounts, account_ids[]}`), CRUD `create/update/delete_group`
+  (nom unique ; `delete_group` **bloqué** si des utilisateurs y sont encore, comme
+  `delete_provider`). `create_user` / `update_user` : signature `(…, is_admin, group_ids)`.
+  Garde-fou **dernier admin** (`_last_admin_guard`) sur `update_user` (décoche admin) et
+  `delete_user`. `delete_account` retire désormais le compte des `account_ids` des groupes.
+- **`auth.py`** : `is_admin()`, `admin_required` (remplace `role_required("admin")`),
+  `account_permissions(user, account_id)` (set de droits, union des groupes ; admin = tous),
+  `can(user, account_id, perm)`. `accessible_accounts` / `can_access_account` réécrits sur les
+  groupes. `ROLES`, `role_required`, `can_write` supprimés.
+- **`explorer_routes.py`** : chaque garde `can_write(g.user)` → `can(g.user, account_id, <perm>)`
+  avec la perm précise (`bucket_admin` pour create/delete bucket, `upload` pour upload/mkdir,
+  `delete` pour delete-object(s), `download` pour download simple **et** zip groupé — le
+  téléchargement était auparavant non gardé). `bucket_usage_refresh` n'est plus gardé en écriture
+  (opération de lecture). Les vues passent `perms=account_permissions(...)` au lieu de `can_write`.
+- **`admin_routes.py`** : section Groupes (`/admin/groups`, `/new`, `/<id>/edit`, `/<id>/delete`),
+  audit `admin` / `group_create|group_update|group_delete`. Formulaire user : `is_admin`
+  (checkbox) + `group_ids` (checkboxes), plus de `role` ni de sélecteur de comptes.
+- **Templates** : `admin_groups.html` + `admin_group_form.html` (nouveaux) ; `admin_user_form.html`
+  et `admin_users.html` réécrits (type admin/utilisateur + liste des groupes) ; `base.html` lien
+  sidebar « Groupes » (icône `users` ajoutée à `_macros.html`) et badge `is_admin` ;
+  `buckets.html` / `explorer.html` : `{% if can_write %}` → `{% if '<perm>' in perms %}`, le
+  bouton et le lien de téléchargement sont masqués sans `download`. `style.css` : `.bdg.user`.
+- **Tests** (script client Flask non versionné, DB isolée) : migration (admins préservés, clés
+  legacy retirées), CRUD groupe + assainissement `all_accounts`/`account_ids`, création user dans
+  un groupe, garde-fou dernier admin, `delete_group` bloqué avec membre, session non-admin
+  (list implicite OK, 404 sur compte non accordé, 403 sur create/delete bucket + upload +
+  delete-object, 403 sur les pages admin), rendu des 4 pages admin (liste + formulaires).
+
 ### Renommage : S3 Viewer → Multi S3 Browser
 
 Renommage complet du produit (aucun déploiement en place ni dépôt GitHub, donc rename propre) :

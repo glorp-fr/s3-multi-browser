@@ -7,16 +7,19 @@
   <a class="btn blue" href="{{ url_for('admin.user_new') }}">{{ macros.icon("plus") }} Ajouter un utilisateur</a>
 </div>
 <table class="tbl">
-  <thead><tr><th>Utilisateur</th><th>Rôle</th><th>Comptes accessibles</th><th></th></tr></thead>
+  <thead><tr><th>Utilisateur</th><th>Type</th><th>Groupes</th><th></th></tr></thead>
   <tbody>
   {% for user in users %}
     <tr>
       <td>{{ user.username }}</td>
-      <td><span class="bdg {{ user.role }}">{{ user.role }}</span></td>
+      <td>
+        {% if user.is_admin %}<span class="bdg admin">admin</span>
+        {% else %}<span class="bdg user">utilisateur</span>{% endif %}
+      </td>
       <td class="hint">
-        {% if user.account_ids == "*" %}Tous les comptes
-        {% elif user.account_ids %}{{ user.account_ids | length }} compte(s)
-        {% else %}Aucun{% endif %}
+        {% if user.is_admin %}—
+        {% elif user.group_ids %}{% for gid in user.group_ids %}{{ groups_by_id[gid].name if gid in groups_by_id else '(supprimé)' }}{{ ", " if not loop.last }}{% endfor %}
+        {% else %}<em>aucun groupe</em>{% endif %}
       </td>
       <td class="row-actions">
         <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('admin.user_edit', user_id=user.id) }}">{{ macros.icon("edit") }}</a>

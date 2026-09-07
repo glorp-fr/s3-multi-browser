@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ "Modifier" if group else "Ajouter" }} un groupe — Admin{% endblock %}
+{% set perm_labels = {
+  "download": "Télécharger des objets",
+  "upload": "Envoyer des objets / créer des dossiers",
+  "delete": "Supprimer des objets / dossiers",
+  "bucket_admin": "Créer et supprimer des buckets",
+} %}
+{% block content %}
+<a class="back-link" href="{{ url_for('admin.groups') }}">&larr; Groupes</a>
+<h1 class="stitle">{{ "Modifier le groupe" if group else "Ajouter un groupe" }}</h1>
+<form class="form-card" method="post">
+  <label>Nom du groupe
+    <input type="text" name="name" value="{{ group.name if group else '' }}" required>
+  </label>
+
+  <fieldset>
+    <legend>Droits accordés</legend>
+    <p class="hint">La navigation (lister les buckets, parcourir, rechercher, recalculer la
+      volumétrie) est toujours accordée. Coche ci-dessous les actions supplémentaires.</p>
+    {% for perm in permissions %}
+    <label class="checkbox-row">
+      <input type="checkbox" name="permissions" value="{{ perm }}"
+             {{ "checked" if group and perm in (group.permissions or []) else "" }}>
+      {{ perm_labels.get(perm, perm) }} <span class="hint mono">({{ perm }})</span>
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Comptes couverts</legend>
+    <label class="checkbox-row">
+      <input type="checkbox" name="all_accounts" id="all_accounts"
+             {{ "checked" if group and group.all_accounts else "" }}>
+      Tous les comptes (actuels et futurs)
+    </label>
+    <div class="account-checks">
+      {% for account in accounts %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="account_ids" value="{{ account.id }}"
+               {{ "checked" if group and not group.all_accounts and account.id in (group.account_ids or []) else "" }}>
+        {{ account.name }}
+      </label>
+      {% else %}
+      <p class="hint">Aucun compte S3 configuré.</p>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+<script>
+(function () {
+  var all = document.getElementById('all_accounts');
+  function sync() {
+    document.querySelectorAll('input[name="account_ids"]').forEach(function (cb) {
+      cb.disabled = all.checked;
+    });
+  }
+  all.addEventListener('change', sync);
+  sync();
+})();
+</script>
+{% endblock %}

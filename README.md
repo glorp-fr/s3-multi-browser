@@ -12,8 +12,14 @@ chiffré côté serveur.
   des régions personnalisés depuis **Administration → Providers**.
 - **Comptes** : plusieurs comptes par provider (nom, région, Access Key, Secret Key chiffrée au repos),
   regroupés par provider dans la liste des comptes.
-- **Utilisateurs** avec 3 rôles : `admin` (gère providers/comptes/utilisateurs), `operateur`
-  (upload/download/delete/create sur ses comptes autorisés), `readonly` (lecture/téléchargement seuls).
+- **Utilisateurs** : soit **administrateur** (accès total, gère providers/comptes/groupes/utilisateurs),
+  soit utilisateur standard dont les accès découlent uniquement de ses **groupes**.
+- **Groupes** (`Administration → Groupes`) : unité de contrôle d'accès. Un groupe couvre un ensemble
+  de comptes S3 (liste explicite ou « tous les comptes ») et porte un jeu de droits fins : `download`,
+  `upload`, `delete`, `bucket_admin` (créer/supprimer des buckets). La navigation (lister les buckets,
+  parcourir, rechercher, recalculer la volumétrie) est implicite sur tout compte couvert. Un
+  utilisateur peut appartenir à plusieurs groupes : ses accès et droits effectifs sont l'**union** de
+  ses groupes. Un groupe sans droit coché = lecture seule.
 - **Explorateur de buckets** par compte : navigation par "dossiers" (préfixes `/`), upload,
   téléchargement, création/suppression de dossiers et buckets, recherche d'objets dans le dossier
   courant, pagination (20/30/50/100 par page).

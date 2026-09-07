@@ -16,7 +16,7 @@
   <span class="hdr-title">Multi S3 Browser</span>
   <div class="hdr-spacer"></div>
   <span class="mono hdr-user">{{ current_user.username }}</span>
-  <span class="bdg {{ current_user.role }}">{{ current_user.role }}</span>
+  <span class="bdg {{ 'admin' if current_user.is_admin else 'user' }}">{{ 'admin' if current_user.is_admin else 'utilisateur' }}</span>
   <form method="post" action="{{ url_for('auth.logout') }}">
     <button class="btn icon ghost" type="submit" title="Déconnexion">{{ macros.icon("log-out") }}</button>
   </form>
@@ -24,16 +24,17 @@
 <div class="shell">
   <nav class="sidebar">
     <a class="navlink" href="{{ url_for('explorer.accounts') }}">{{ macros.icon("box") }} Comptes</a>
-    {% if current_user.role == "admin" %}
+    {% if current_user.is_admin %}
     <div class="nav-sep">Administration</div>
     <a class="navlink" href="{{ url_for('admin.providers') }}">{{ macros.icon("globe") }} Providers</a>
     <a class="navlink" href="{{ url_for('admin.accounts') }}">{{ macros.icon("shield") }} Comptes</a>
+    <a class="navlink" href="{{ url_for('admin.groups') }}">{{ macros.icon("users") }} Groupes</a>
     <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
     <a class="navlink" href="{{ url_for('admin.logs') }}">{{ macros.icon("activity") }} Logs</a>
     <a class="navlink" href="{{ url_for('admin.version_page') }}">{{ macros.icon("tag") }} Version{% if update_available %} <span class="upd-dot" title="Mise à jour disponible">●</span>{% endif %}</a>
     {% endif %}
     <div class="sidebar-foot">
-      {% if current_user.role == "admin" %}
+      {% if current_user.is_admin %}
       <a href="{{ url_for('admin.version_page') }}" class="mono">v{{ app_version }}</a>
       {% else %}
       <span class="mono">v{{ app_version }}</span>

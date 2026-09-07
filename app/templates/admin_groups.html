@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Groupes — Admin{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1 class="stitle">Groupes</h1>
+  <a class="btn blue" href="{{ url_for('admin.group_new') }}">{{ macros.icon("plus") }} Ajouter un groupe</a>
+</div>
+<p class="hint">Un groupe donne accès à un ensemble de comptes S3 avec un jeu de droits. Un utilisateur
+  (non-admin) cumule les accès et droits de tous ses groupes. La navigation (lister/parcourir) est
+  toujours accordée sur un compte couvert par le groupe.</p>
+<table class="tbl">
+  <thead><tr><th>Nom</th><th>Droits</th><th>Comptes</th><th>Membres</th><th></th></tr></thead>
+  <tbody>
+  {% for group in groups %}
+    <tr>
+      <td>{{ macros.icon("users") }} {{ group.name }}</td>
+      <td class="hint">
+        {% if group.permissions %}{{ group.permissions | join(', ') }}{% else %}<em>lecture seule</em>{% endif %}
+      </td>
+      <td class="hint">
+        {% if group.all_accounts %}Tous les comptes (actuels et futurs)
+        {% elif group.account_ids %}
+          {% for aid in group.account_ids %}{{ accounts_by_id[aid].name if aid in accounts_by_id else '(supprimé)' }}{{ ", " if not loop.last }}{% endfor %}
+        {% else %}<em>aucun compte</em>{% endif %}
+      </td>
+      <td class="hint">{{ member_counts.get(group.id, 0) }}</td>
+      <td class="row-actions">
+        <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('admin.group_edit', group_id=group.id) }}">{{ macros.icon("edit") }}</a>
+        <form method="post" action="{{ url_for('admin.group_delete', group_id=group.id) }}"
+              onsubmit="return confirm('Supprimer le groupe {{ group.name }} ?');">
+          <button class="btn icon red sm" type="submit" title="Supprimer"
+                  {{ "disabled" if member_counts.get(group.id, 0) else "" }}>{{ macros.icon("trash") }}</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="hint">Aucun groupe défini</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

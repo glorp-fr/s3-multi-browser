@@ -1,7 +1,7 @@
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import audit, storage, version
-from ..auth import ROLES, role_required
+from ..auth import PERMISSIONS, admin_required
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -9,7 +9,7 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 # --- Version / mises à jour ----------------------------------------------
 
 @bp.route("/version")
-@role_required("admin")
+@admin_required
 def version_page():
     return render_template(
         "admin_version.html",
@@ -20,7 +20,7 @@ def version_page():
 
 
 @bp.route("/version/check", methods=["POST"])
-@role_required("admin")
+@admin_required
 def version_check():
     result = version.check_update()
     if result.get("error"):
@@ -37,7 +37,7 @@ def version_check():
 
 
 @bp.route("/version/update", methods=["POST"])
-@role_required("admin")
+@admin_required
 def version_update():
     result = version.apply_update()
     if not result["ok"]:
@@ -58,7 +58,7 @@ def version_update():
 # --- Logs ------------------------------------------------------------------
 
 @bp.route("/logs")
-@role_required("admin")
+@admin_required
 def logs():
     recent, last_seq = audit.tail(limit=300)
     history = audit.connection_history(q=request.args.get("q", "").strip() or None, limit=200)
@@ -69,7 +69,7 @@ def logs():
 
 
 @bp.route("/logs/tail")
-@role_required("admin")
+@admin_required
 def logs_tail():
     try:
         after = int(request.args.get("after", ""))
@@ -84,13 +84,13 @@ def logs_tail():
 # --- Providers ---------------------------------------------------------------
 
 @bp.route("/providers")
-@role_required("admin")
+@admin_required
 def providers():
     return render_template("admin_providers.html", providers=storage.get_providers(), accounts=storage.get_accounts())
 
 
 @bp.route("/providers/new", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def provider_new():
     if request.method == "POST":
         name = request.form["name"].strip()
@@ -109,7 +109,7 @@ def provider_new():
 
 
 @bp.route("/providers/<provider_id>/edit", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def provider_edit(provider_id):
     provider = storage.get_provider_by_id(provider_id)
     if not provider:
@@ -133,7 +133,7 @@ def provider_edit(provider_id):
 
 
 @bp.route("/providers/<provider_id>/delete", methods=["POST"])
-@role_required("admin")
+@admin_required
 def provider_delete(provider_id):
     provider = storage.get_provider_by_id(provider_id)
     try:
@@ -150,14 +150,14 @@ def provider_delete(provider_id):
 # --- Accounts ---------------------------------------------------------------
 
 @bp.route("/accounts")
-@role_required("admin")
+@admin_required
 def accounts():
     providers_by_id = {p["id"]: p for p in storage.get_providers()}
     return render_template("admin_accounts.html", accounts=storage.get_accounts(), providers_by_id=providers_by_id)
 
 
 @bp.route("/accounts/new", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def account_new():
     if request.method == "POST":
         name = request.form["name"].strip()
@@ -179,7 +179,7 @@ def account_new():
 
 
 @bp.route("/accounts/<account_id>/edit", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def account_edit(account_id):
     account = storage.get_account_by_id(account_id)
     if not account:
@@ -210,7 +210,7 @@ def account_edit(account_id):
 
 
 @bp.route("/accounts/<account_id>/delete", methods=["POST"])
-@role_required("admin")
+@admin_required
 def account_delete(account_id):
     account = storage.get_account_by_id(account_id)
     storage.delete_account(account_id)
@@ -221,44 +221,134 @@ def account_delete(account_id):
     return redirect(url_for("admin.accounts"))
 
 
+# --- Groups ----------------------------------------------------------------
+
+def _group_form():
+    """(name, permissions, all_accounts, account_ids) from the submitted group form."""
+    all_accounts = bool(request.form.get("all_accounts"))
+    return (
+        request.form.get("name", "").strip(),
+        [p for p in request.form.getlist("permissions") if p in PERMISSIONS],
+        all_accounts,
+        [] if all_accounts else request.form.getlist("account_ids"),
+    )
+
+
+@bp.route("/groups")
+@admin_required
+def groups():
+    accounts_by_id = {a["id"]: a for a in storage.get_accounts()}
+    users = storage.get_users()
+    member_counts = {}
+    for grp in storage.get_groups():
+        member_counts[grp["id"]] = sum(1 for u in users if grp["id"] in (u.get("group_ids") or []))
+    return render_template(
+        "admin_groups.html", groups=storage.get_groups(),
+        accounts_by_id=accounts_by_id, member_counts=member_counts, permissions=PERMISSIONS,
+    )
+
+
+@bp.route("/groups/new", methods=["GET", "POST"])
+@admin_required
+def group_new():
+    if request.method == "POST":
+        name, perms, all_accounts, account_ids = _group_form()
+        try:
+            storage.create_group(name, perms, all_accounts, account_ids)
+            audit.log("admin", "group_create",
+                      f"Groupe « {name} » créé (droits : {', '.join(perms) or 'aucun'})",
+                      target=name)
+            flash("Groupe créé", "success")
+            return redirect(url_for("admin.groups"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_group_form.html", group=None,
+                           permissions=PERMISSIONS, accounts=storage.get_accounts())
+
+
+@bp.route("/groups/<group_id>/edit", methods=["GET", "POST"])
+@admin_required
+def group_edit(group_id):
+    group = storage.get_group_by_id(group_id)
+    if not group:
+        flash("Groupe introuvable", "error")
+        return redirect(url_for("admin.groups"))
+    if request.method == "POST":
+        name, perms, all_accounts, account_ids = _group_form()
+        try:
+            storage.update_group(group_id, name, perms, all_accounts, account_ids)
+            audit.log("admin", "group_update",
+                      f"Groupe « {name} » modifié (droits : {', '.join(perms) or 'aucun'})",
+                      target=name)
+            flash("Groupe mis à jour", "success")
+            return redirect(url_for("admin.groups"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_group_form.html", group=group,
+                           permissions=PERMISSIONS, accounts=storage.get_accounts())
+
+
+@bp.route("/groups/<group_id>/delete", methods=["POST"])
+@admin_required
+def group_delete(group_id):
+    group = storage.get_group_by_id(group_id)
+    try:
+        storage.delete_group(group_id)
+        audit.log("admin", "group_delete",
+                  f"Groupe « {group['name'] if group else group_id} » supprimé",
+                  target=group["name"] if group else group_id)
+        flash("Groupe supprimé", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("admin.groups"))
+
+
 # --- Users -------------------------------------------------------------------
 
 @bp.route("/users")
-@role_required("admin")
+@admin_required
 def users():
-    return render_template("admin_users.html", users=storage.get_users(), accounts=storage.get_accounts())
+    groups_by_id = {g["id"]: g for g in storage.get_groups()}
+    return render_template("admin_users.html", users=storage.get_users(), groups_by_id=groups_by_id)
 
 
-def _account_ids_from_form():
-    if request.form.get("all_accounts"):
-        return "*"
-    return request.form.getlist("account_ids")
+def _user_form():
+    """(is_admin, group_ids) from the submitted user form."""
+    is_admin = bool(request.form.get("is_admin"))
+    return is_admin, ([] if is_admin else request.form.getlist("group_ids"))
+
+
+def _access_label(is_admin, group_ids):
+    if is_admin:
+        return "administrateur"
+    return f"{len(group_ids)} groupe(s)"
 
 
 @bp.route("/users/new", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def user_new():
     if request.method == "POST":
         username = request.form["username"].strip()
-        role = request.form["role"]
+        is_admin, group_ids = _user_form()
         try:
             storage.create_user(
                 username=username,
                 password=request.form["password"],
-                role=role,
-                account_ids=_account_ids_from_form(),
+                is_admin=is_admin,
+                group_ids=group_ids,
             )
             audit.log("admin", "user_create",
-                      f"Utilisateur « {username} » créé (rôle {role})", target=username)
+                      f"Utilisateur « {username} » créé ({_access_label(is_admin, group_ids)})",
+                      target=username)
             flash("Utilisateur créé", "success")
             return redirect(url_for("admin.users"))
         except ValueError as exc:
             flash(str(exc), "error")
-    return render_template("admin_user_form.html", user=None, roles=ROLES, accounts=storage.get_accounts())
+    return render_template("admin_user_form.html", user=None, groups=storage.get_groups())
 
 
 @bp.route("/users/<user_id>/edit", methods=["GET", "POST"])
-@role_required("admin")
+@admin_required
 def user_edit(user_id):
     user = storage.get_user_by_id(user_id)
     if not user:
@@ -266,34 +356,37 @@ def user_edit(user_id):
         return redirect(url_for("admin.users"))
     if request.method == "POST":
         username = request.form["username"].strip()
-        role = request.form["role"]
+        is_admin, group_ids = _user_form()
         pw_changed = bool(request.form.get("password"))
         try:
             storage.update_user(
                 user_id,
                 username=username,
-                role=role,
-                account_ids=_account_ids_from_form(),
+                is_admin=is_admin,
+                group_ids=group_ids,
                 password=request.form.get("password") or None,
             )
             audit.log("admin", "user_update",
-                      f"Utilisateur « {username} » modifié (rôle {role})"
+                      f"Utilisateur « {username} » modifié ({_access_label(is_admin, group_ids)})"
                       + (" — mot de passe changé" if pw_changed else ""),
                       target=username)
             flash("Utilisateur mis à jour", "success")
             return redirect(url_for("admin.users"))
         except ValueError as exc:
             flash(str(exc), "error")
-    return render_template("admin_user_form.html", user=user, roles=ROLES, accounts=storage.get_accounts())
+    return render_template("admin_user_form.html", user=user, groups=storage.get_groups())
 
 
 @bp.route("/users/<user_id>/delete", methods=["POST"])
-@role_required("admin")
+@admin_required
 def user_delete(user_id):
     user = storage.get_user_by_id(user_id)
-    storage.delete_user(user_id)
-    audit.log("admin", "user_delete",
-              f"Utilisateur « {user['username'] if user else user_id} » supprimé",
-              target=user["username"] if user else user_id)
-    flash("Utilisateur supprimé", "success")
+    try:
+        storage.delete_user(user_id)
+        audit.log("admin", "user_delete",
+                  f"Utilisateur « {user['username'] if user else user_id} » supprimé",
+                  target=user["username"] if user else user_id)
+        flash("Utilisateur supprimé", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
     return redirect(url_for("admin.users"))

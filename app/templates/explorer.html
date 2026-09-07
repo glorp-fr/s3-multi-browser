@@ -10,7 +10,7 @@
   {% endfor %}
 </h1>
 
-{% if can_write %}
+{% if 'upload' in perms %}
 <div class="toolbar">
   <form class="inline-form" method="post" action="{{ url_for('explorer.upload', account_id=account.id, bucket=bucket) }}" enctype="multipart/form-data">
     <input type="hidden" name="prefix" value="{{ prefix }}">
@@ -55,10 +55,12 @@
   <input type="hidden" name="prefix" value="{{ prefix }}">
   <div class="bulk-bar">
     <span class="bulk-count hint">Aucune sélection</span>
+    {% if 'download' in perms %}
     <button class="btn ghost sm" type="submit" name="action" value="download" data-bulk-action disabled>
       {{ macros.icon("download") }} Télécharger (.zip)
     </button>
-    {% if can_write %}
+    {% endif %}
+    {% if 'delete' in perms %}
     <button class="btn red sm" type="submit" name="action" value="delete" data-bulk-action disabled
             data-bulk-confirm="Supprimer les %n élément(s) sélectionné(s) ? Les dossiers sont supprimés récursivement.">
       {{ macros.icon("trash") }} Supprimer la sélection
@@ -88,7 +90,9 @@
         <td class="mono">{{ obj.size }}</td>
         <td class="mono">{{ obj.last_modified }}</td>
         <td class="row-actions">
+          {% if 'download' in perms %}
           <a class="btn icon ghost sm" title="Télécharger" href="{{ url_for('explorer.download', account_id=account.id, bucket=bucket, key=obj.key) }}">{{ macros.icon("download") }}</a>
+          {% endif %}
         </td>
       </tr>
     {% else %}

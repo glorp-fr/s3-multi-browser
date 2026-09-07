@@ -59,8 +59,13 @@ def decrypt_secret(token: str) -> str:
         raise RuntimeError("Unable to decrypt stored secret key (wrong APP_MASTER_KEY?)") from exc
 
 
+# Fine-grained capabilities a group can grant on the accounts it covers. `list`/navigation
+# is implicit: any group that grants an account lets its members browse it.
+GROUP_PERMISSIONS = ("download", "upload", "delete", "bucket_admin")
+
+
 def _empty_db():
-    return {"users": [], "accounts": [], "providers": [], "_providers_seeded": False}
+    return {"users": [], "accounts": [], "providers": [], "groups": [], "_providers_seeded": False}
 
 
 def _load():
@@ -73,6 +78,7 @@ def _load():
         else:
             data = json.loads(content)
     data.setdefault("providers", [])
+    data.setdefault("groups", [])
     data.setdefault("_providers_seeded", False)
     return data
 
@@ -99,19 +105,33 @@ def bootstrap_admin_if_empty():
             "id": str(uuid.uuid4()),
             "username": username,
             "password_hash": generate_password_hash(password),
-            "role": "admin",
-            "account_ids": "*",
+            "is_admin": True,
+            "group_ids": [],
         })
         _save(data)
 
 
 def migrate():
-    """One-time, idempotent upgrade of the data file: seed default providers, and attach any
+    """One-time, idempotent upgrade of the data file: seed default providers, attach any
     pre-existing account (from before providers existed) to an "Outscale" provider so it keeps
-    working unchanged."""
+    working unchanged, and move users off the old global-role model onto groups."""
     with _lock:
         data = _load()
         changed = False
+
+        # Old per-user model: role in {admin, operateur, readonly} + account_ids ("*" | [ids]).
+        # New model: is_admin flag + group_ids. Non-admin access is not auto-migrated (decided
+        # with the operator) — the admin re-grants access through groups.
+        for user in data["users"]:
+            if "role" in user:
+                user["is_admin"] = user.pop("role") == "admin"
+                changed = True
+            if "account_ids" in user:
+                del user["account_ids"]
+                changed = True
+            if "group_ids" not in user:
+                user["group_ids"] = []
+                changed = True
 
         if not data["_providers_seeded"]:
             if not data["providers"]:
@@ -164,7 +184,25 @@ def verify_login(username, password):
     return user
 
 
-def create_user(username, password, role, account_ids):
+def _sanitize_group_ids(data, group_ids):
+    known = {g["id"] for g in data["groups"]}
+    seen = []
+    for gid in group_ids or []:
+        if gid in known and gid not in seen:
+            seen.append(gid)
+    return seen
+
+
+def _last_admin_guard(data, user_id, still_admin):
+    """Raise if applying `still_admin` to `user_id` would leave zero administrators."""
+    admins = {u["id"] for u in data["users"] if u.get("is_admin")}
+    if not still_admin:
+        admins.discard(user_id)
+    if not admins:
+        raise ValueError("Impossible : il doit rester au moins un administrateur")
+
+
+def create_user(username, password, is_admin, group_ids):
     with _lock:
         data = _load()
         if any(u["username"] == username for u in data["users"]):
@@ -173,15 +211,15 @@ def create_user(username, password, role, account_ids):
             "id": str(uuid.uuid4()),
             "username": username,
             "password_hash": generate_password_hash(password),
-            "role": role,
-            "account_ids": account_ids,
+            "is_admin": bool(is_admin),
+            "group_ids": [] if is_admin else _sanitize_group_ids(data, group_ids),
         }
         data["users"].append(user)
         _save(data)
         return user
 
 
-def update_user(user_id, username, role, account_ids, password=None):
+def update_user(user_id, username, is_admin, group_ids, password=None):
     with _lock:
         data = _load()
         user = next((u for u in data["users"] if u["id"] == user_id), None)
@@ -189,9 +227,10 @@ def update_user(user_id, username, role, account_ids, password=None):
             raise ValueError("Utilisateur introuvable")
         if any(u["username"] == username and u["id"] != user_id for u in data["users"]):
             raise ValueError("Ce nom d'utilisateur existe déjà")
+        _last_admin_guard(data, user_id, bool(is_admin))
         user["username"] = username
-        user["role"] = role
-        user["account_ids"] = account_ids
+        user["is_admin"] = bool(is_admin)
+        user["group_ids"] = [] if is_admin else _sanitize_group_ids(data, group_ids)
         if password:
             user["password_hash"] = generate_password_hash(password)
         _save(data)
@@ -201,7 +240,85 @@ def update_user(user_id, username, role, account_ids, password=None):
 def delete_user(user_id):
     with _lock:
         data = _load()
+        if not any(u["id"] == user_id for u in data["users"]):
+            return
+        _last_admin_guard(data, user_id, still_admin=False)
         data["users"] = [u for u in data["users"] if u["id"] != user_id]
+        _save(data)
+
+
+# --- Groups ----------------------------------------------------------------
+
+def get_groups():
+    return _load()["groups"]
+
+
+def get_group_by_id(group_id):
+    return next((g for g in get_groups() if g["id"] == group_id), None)
+
+
+def _clean_permissions(permissions):
+    return [p for p in GROUP_PERMISSIONS if p in (permissions or [])]
+
+
+def _clean_account_ids(data, account_ids):
+    known = {a["id"] for a in data["accounts"]}
+    seen = []
+    for aid in account_ids or []:
+        if aid in known and aid not in seen:
+            seen.append(aid)
+    return seen
+
+
+def create_group(name, permissions, all_accounts, account_ids):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Nom de groupe requis")
+    with _lock:
+        data = _load()
+        if any(g["name"] == name for g in data["groups"]):
+            raise ValueError("Ce groupe existe déjà")
+        group = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "permissions": _clean_permissions(permissions),
+            "all_accounts": bool(all_accounts),
+            "account_ids": [] if all_accounts else _clean_account_ids(data, account_ids),
+        }
+        data["groups"].append(group)
+        _save(data)
+        return group
+
+
+def update_group(group_id, name, permissions, all_accounts, account_ids):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Nom de groupe requis")
+    with _lock:
+        data = _load()
+        group = next((g for g in data["groups"] if g["id"] == group_id), None)
+        if not group:
+            raise ValueError("Groupe introuvable")
+        if any(g["name"] == name and g["id"] != group_id for g in data["groups"]):
+            raise ValueError("Ce groupe existe déjà")
+        group["name"] = name
+        group["permissions"] = _clean_permissions(permissions)
+        group["all_accounts"] = bool(all_accounts)
+        group["account_ids"] = [] if all_accounts else _clean_account_ids(data, account_ids)
+        _save(data)
+        return group
+
+
+def delete_group(group_id):
+    with _lock:
+        data = _load()
+        members = [u["username"] for u in data["users"] if group_id in (u.get("group_ids") or [])]
+        if members:
+            raise ValueError(
+                "Impossible de supprimer : des utilisateurs sont encore dans ce groupe ("
+                + ", ".join(members) + ")"
+            )
+        data["groups"] = [g for g in data["groups"] if g["id"] != group_id]
         _save(data)
 
 
@@ -328,8 +445,8 @@ def delete_account(account_id):
     with _lock:
         data = _load()
         data["accounts"] = [a for a in data["accounts"] if a["id"] != account_id]
-        # Drop the account from any user's access list too.
-        for user in data["users"]:
-            if isinstance(user.get("account_ids"), list) and account_id in user["account_ids"]:
-                user["account_ids"] = [a for a in user["account_ids"] if a != account_id]
+        # Drop the account from any group that referenced it explicitly.
+        for group in data["groups"]:
+            if account_id in (group.get("account_ids") or []):
+                group["account_ids"] = [a for a in group["account_ids"] if a != account_id]
         _save(data)
