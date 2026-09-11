@@ -31,6 +31,19 @@ chiffré côté serveur.
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
+- **Synchronisation entre buckets** (`/sync`) : jobs planifiés de copie objet / préfixe / bucket
+  entier vers un autre bucket, **cross-compte et cross-provider** (les objets transitent par le
+  serveur en flux, jamais bufferisés). Suppression des objets absents de la source **optionnelle**
+  par job (décochée par défaut, ce n'est pas un miroir strict imposé). Accessible à tout utilisateur
+  disposant de `download` sur le compte source et `upload` sur le compte destination (pas
+  admin-only) ; chaque utilisateur gère ses propres jobs, **Administration → Synchronisation**
+  offre une vue globale pour superviser/désactiver/reprendre les jobs de tous. Droits revérifiés à
+  chaque exécution planifiée : perte d'un droit nécessaire ⇒ job désactivé automatiquement
+  (`rights_error`), débloqué par un admin (reprise) ou par le propriétaire (ré-édition). La barre
+  d'actions groupées de l'explorateur propose aussi **Copier vers…**, qui crée un job one-shot en
+  tâche de fond suivi sur `/sync` (barre de progression, polling). Sélection de compte/bucket en
+  liste déroulante et navigateur de préfixe intégré (bouton **Parcourir…**) plutôt que de la saisie
+  libre.
 - **Logs** (`Administration → Logs`) : journal d'audit de toutes les actions — connexions/déconnexions
   et échecs de connexion, actions S3 en lecture (listing, navigation, téléchargement) et en écriture
   (upload, création/suppression de bucket, dossier, objet), CRUD admin. Vue **temps réel** (rafraîchie
