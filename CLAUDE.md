@@ -40,6 +40,16 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Fix : favicon incohérente avec le logo (v0.9.8)
+
+`app/static/assets/favicon.png` n'avait rien à voir avec le logo GLORP affiché en haut à gauche
+de la sidebar (`logo.png`) — un tout autre logo (vraisemblablement une icône de test/placeholder
+oubliée). Régénérée à partir de `logo.png` : recadrage du seul pictogramme nuage (sans le texte
+« GLORP CLOUD TOOLS & DEVELOPMENT », illisible en 32px), fond transparent, exporté en 64×64 pour
+rester net sur les onglets HiDPI. Généré une fois avec Pillow/numpy installés temporairement dans
+le venv local (retirés ensuite, jamais dans `requirements.txt` — le `Dockerfile` n'installe que
+ce fichier, donc l'outillage de génération ne fuit pas dans l'image).
+
 ### Anti-bruteforce configurable depuis l'admin, pas seulement en env (v0.9.7)
 
 Suite directe de la v0.9.6 : l'utilisateur veut pouvoir désactiver la protection depuis
