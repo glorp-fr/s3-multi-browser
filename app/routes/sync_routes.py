@@ -2,10 +2,12 @@
 account and `upload` on at least one (possibly different) account can create jobs. Each
 user only sees/edits their own jobs here — cross-user oversight is `/admin/sync`
 (admin_routes.py)."""
+from botocore.exceptions import ClientError
 from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, url_for
 
 from .. import audit, storage, sync
 from ..auth import accounts_with_permission, can, login_required
+from ..s3client import get_client
 
 bp = Blueprint("sync", __name__, url_prefix="/sync")
 
@@ -126,6 +128,28 @@ def status():
             "next_run_at": sync.next_run_display(job),
         })
     return jsonify(jobs=out)
+
+
+@bp.route("/buckets")
+@login_required
+def list_buckets():
+    """JSON list of bucket names on one account — feeds the source/destination bucket
+    <select> in the job form (and the explorer's "Copier vers…" destination picker) so
+    users pick from what's actually there instead of typing a bucket name by hand."""
+    account_id = request.args.get("account_id", "")
+    perm = request.args.get("perm", "")
+    if perm not in ("download", "upload"):
+        return jsonify(buckets=[], error="Paramètre invalide"), 400
+    if not can(g.user, account_id, perm):
+        abort(403)
+    account = storage.get_account_by_id(account_id)
+    if not account:
+        return jsonify(buckets=[])
+    try:
+        names = sorted(b["Name"] for b in get_client(account).list_buckets().get("Buckets", []))
+    except ClientError as exc:
+        return jsonify(buckets=[], error=f"Erreur OOS : {exc}")
+    return jsonify(buckets=names)
 
 
 @bp.route("/new", methods=["GET", "POST"])

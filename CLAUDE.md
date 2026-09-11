@@ -40,6 +40,18 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Synchronisation — sélection du bucket en liste (v0.8.1)
+
+Les champs bucket source/destination du formulaire de job (`sync_job_form.html`) et le
+sélecteur de destination du bulk « Copier vers… » (`explorer.html`) étaient des champs texte
+libres — remplacés par des `<select>` peuplés dynamiquement (fetch JS au changement de compte)
+avec les buckets **réellement présents** sur le compte choisi, plutôt que de laisser taper un nom
+à la main. Nouvelle route `GET /sync/buckets?account_id=&perm=download|upload` (JSON), qui
+revérifie le droit (`download` côté source, `upload` côté destination) avant d'appeler
+`list_buckets()` — même garde-fou que le reste de l'app, la liste affichée dans le `<select>` HTML
+n'étant qu'un filtre côté client. En édition, le bucket déjà enregistré reste sélectionné (ou
+apparaît marqué « introuvable » s'il a été supprimé entre-temps) plutôt que d'être perdu.
+
 ### Synchronisation planifiée entre buckets + copie inter-bucket — v0.8.0
 
 Deux fonctionnalités livrées ensemble car elles partagent le même moteur : (1) planifier une

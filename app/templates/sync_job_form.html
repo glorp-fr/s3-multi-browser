@@ -14,7 +14,7 @@
   <fieldset>
     <legend>Source</legend>
     <label>Compte
-      <select name="source_account_id" required>
+      <select name="source_account_id" id="source_account_id" required>
         <option value="">— choisir —</option>
         {% for a in source_accounts %}
         <option value="{{ a.id }}" {{ "selected" if job and job.source.account_id == a.id else "" }}>{{ a.name }}</option>
@@ -22,7 +22,9 @@
       </select>
     </label>
     <label>Bucket
-      <input type="text" name="source_bucket" class="mono" value="{{ job.source.bucket if job else '' }}" required>
+      <select name="source_bucket" id="source_bucket" required data-current="{{ job.source.bucket if job else '' }}">
+        {% if job %}<option value="{{ job.source.bucket }}" selected>{{ job.source.bucket }}</option>{% endif %}
+      </select>
     </label>
     <fieldset>
       <legend>Portée</legend>
@@ -47,7 +49,7 @@
   <fieldset>
     <legend>Destination</legend>
     <label>Compte
-      <select name="dest_account_id" required>
+      <select name="dest_account_id" id="dest_account_id" required>
         <option value="">— choisir —</option>
         {% for a in dest_accounts %}
         <option value="{{ a.id }}" {{ "selected" if job and job.dest.account_id == a.id else "" }}>{{ a.name }}</option>
@@ -55,7 +57,9 @@
       </select>
     </label>
     <label>Bucket
-      <input type="text" name="dest_bucket" class="mono" value="{{ job.dest.bucket if job else '' }}" required>
+      <select name="dest_bucket" id="dest_bucket" required data-current="{{ job.dest.bucket if job else '' }}">
+        {% if job %}<option value="{{ job.dest.bucket }}" selected>{{ job.dest.bucket }}</option>{% endif %}
+      </select>
     </label>
     <label>Préfixe destination <span class="hint">(optionnel — les objets gardent leur chemin relatif sous ce préfixe)</span>
       <input type="text" name="dest_prefix" class="mono" value="{{ job.dest.prefix if job else '' }}" placeholder="ex. archives/">
@@ -130,6 +134,45 @@
   syncScope();
   syncSchedule();
   syncFreq();
+
+  function wireBucketSelect(accountSel, bucketSel, perm) {
+    function load() {
+      var accountId = accountSel.value;
+      var current = bucketSel.dataset.current;
+      if (!accountId) {
+        bucketSel.innerHTML = '<option value="">— choisir un compte d\'abord —</option>';
+        return;
+      }
+      bucketSel.innerHTML = '<option value="">Chargement…</option>';
+      fetch('{{ url_for("sync.list_buckets") }}?account_id=' + encodeURIComponent(accountId) + '&perm=' + perm,
+            { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var buckets = data.buckets || [];
+          bucketSel.innerHTML = '';
+          if (!buckets.length) {
+            bucketSel.innerHTML = '<option value="">Aucun bucket trouvé sur ce compte</option>';
+          }
+          buckets.forEach(function (name) {
+            var opt = document.createElement('option');
+            opt.value = name; opt.textContent = name;
+            if (name === current) opt.selected = true;
+            bucketSel.appendChild(opt);
+          });
+          if (current && buckets.indexOf(current) === -1) {
+            var stale = document.createElement('option');
+            stale.value = current; stale.textContent = current + ' (introuvable)';
+            stale.selected = true;
+            bucketSel.appendChild(stale);
+          }
+        })
+        .catch(function () { bucketSel.innerHTML = '<option value="">Erreur de chargement</option>'; });
+    }
+    accountSel.addEventListener('change', function () { bucketSel.dataset.current = ''; load(); });
+    load();
+  }
+  wireBucketSelect(document.getElementById('source_account_id'), document.getElementById('source_bucket'), 'download');
+  wireBucketSelect(document.getElementById('dest_account_id'), document.getElementById('dest_bucket'), 'upload');
 })();
 </script>
 {% endblock %}

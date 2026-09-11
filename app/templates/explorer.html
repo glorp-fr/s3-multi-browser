@@ -70,11 +70,13 @@
 
   {% if dest_accounts %}
   <div class="bulk-bar" style="margin-top:-8px">
-    <select name="dest_account_id">
+    <select name="dest_account_id" id="dest_account_id">
       <option value="">Copier vers… compte</option>
       {% for a in dest_accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}
     </select>
-    <input type="text" name="dest_bucket" class="mono" placeholder="bucket destination">
+    <select name="dest_bucket" id="dest_bucket">
+      <option value="">— choisir un compte —</option>
+    </select>
     <input type="text" name="dest_prefix" class="mono" placeholder="préfixe destination (optionnel)">
     <button class="btn ghost sm" type="submit" name="action" value="copy" data-bulk-action disabled
             data-bulk-confirm="Copier les %n élément(s) sélectionné(s) vers la destination indiquée ?">
@@ -139,4 +141,36 @@
 {% endif %}
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', filename='bulk.js') }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='bulk.js') }}"></script>
+{% if dest_accounts %}
+<script>
+(function () {
+  var accountSel = document.getElementById('dest_account_id');
+  var bucketSel = document.getElementById('dest_bucket');
+  if (!accountSel || !bucketSel) return;
+  accountSel.addEventListener('change', function () {
+    var accountId = accountSel.value;
+    if (!accountId) {
+      bucketSel.innerHTML = '<option value="">— choisir un compte —</option>';
+      return;
+    }
+    bucketSel.innerHTML = '<option value="">Chargement…</option>';
+    fetch('{{ url_for("sync.list_buckets") }}?account_id=' + encodeURIComponent(accountId) + '&perm=upload',
+          { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var buckets = data.buckets || [];
+        bucketSel.innerHTML = buckets.length ? '' : '<option value="">Aucun bucket trouvé</option>';
+        buckets.forEach(function (name) {
+          var opt = document.createElement('option');
+          opt.value = name; opt.textContent = name;
+          bucketSel.appendChild(opt);
+        });
+      })
+      .catch(function () { bucketSel.innerHTML = '<option value="">Erreur de chargement</option>'; });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
