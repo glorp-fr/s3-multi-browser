@@ -42,10 +42,11 @@ def login():
                 actor=username or "-", status="fail",
             )
             if new_ban:
+                cfg = storage.get_login_protection()
                 audit.log("auth", "login_lockout",
                           f"IP {ip} bannie jusqu'à {new_ban.strftime('%H:%M:%S')} UTC "
-                          f"({login_guard.MAX_ATTEMPTS} échecs en moins de "
-                          f"{int(login_guard.WINDOW.total_seconds() // 60)} min)",
+                          f"({cfg['max_attempts']} échecs en moins de "
+                          f"{cfg['window_minutes']} min)",
                           actor="-", status="fail")
                 flash("Trop de tentatives échouées depuis cette adresse — accès temporairement bloqué.", "error")
             else:

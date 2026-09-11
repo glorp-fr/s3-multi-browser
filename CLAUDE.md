@@ -40,6 +40,38 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Anti-bruteforce configurable depuis l'admin, pas seulement en env (v0.9.7)
+
+Suite directe de la v0.9.6 : l'utilisateur veut pouvoir désactiver la protection depuis
+l'administration si le déploiement est « sûr » ou derrière un reverse proxy (risque de bannir
+tout le monde d'un coup si `X-Forwarded-For` n'est pas transmis). Choix validés : nouvelle page
+dédiée **Administration → Sécurité** (pas ajouté à la page Logs existante) ; les seuils
+(`max_attempts`/`window_minutes`/`ban_minutes`), pas seulement l'interrupteur, deviennent aussi
+éditables depuis cette page — cohérent avec le reste de l'admin (comme Sauvegarde), effectif
+sans redémarrage.
+
+- **`storage.py`** : nouvelle config `login_protection` (même pattern que `backup` :
+  `_default_login_protection()` + `_merge_defaults` au chargement, `get_login_protection()` /
+  `update_login_protection()`). **Seedée depuis les variables d'environnement `LOGIN_*` de la
+  v0.9.6 au tout premier chargement seulement** — une fois écrite dans `db.json`, ces variables
+  sont ignorées ; ça évite qu'une mise à jour change silencieusement le comportement de qui les
+  avait déjà positionnées.
+- **`app/login_guard.py`** : ne lit plus de constantes de module figées à l'import — chaque
+  appel (`is_banned`/`record_failure`) relit `storage.get_login_protection()` en direct. Un
+  admin qui décoche « Activer » voit l'effet **immédiat**, y compris pour une IP déjà bannie
+  (`is_banned` renvoie `None` dès que `enabled` est faux, sans regarder si un bannissement était
+  en cours) — pas besoin d'attendre l'expiration ni de redémarrer gunicorn.
+- **`admin_routes.security_page()`** (GET/POST) + `admin_security.html` : formulaire simple
+  (case Activer + 3 champs numériques), bandeau d'avertissement explicite sur le cas reverse
+  proxy directement dans la page plutôt que seulement dans le README.
+- **`base.html`** : lien « Sécurité » (icône `lock`, déjà présente dans `_macros.html` depuis la
+  v0.9.0 mais jamais utilisée jusqu'ici) ajouté dans la nav Administration, entre Logs et
+  Sauvegarde.
+- **Tests** (client de test Flask, non versionné) : seedage correct depuis les env vars au
+  premier chargement ; bannissement d'une IP simulée puis désactivation via l'UI admin (avec une
+  IP admin différente, pour ne pas la confondre avec l'IP bannie) ⇒ l'IP bannie repasse
+  immédiatement ; réactivation ⇒ le compteur repart bien de zéro pour une nouvelle IP.
+
 ### Anti-bruteforce sur /login (v0.9.6)
 
 Demande initiale de l'utilisateur : « un fail2ban pour sécuriser contre le bruteforce ? ». fail2ban

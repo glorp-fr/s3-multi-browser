@@ -82,6 +82,19 @@ def _default_backup():
     }
 
 
+def _default_login_protection():
+    """Brute-force guard on /login (Administration > Sécurité). Seeded from the
+    LOGIN_* env vars (v0.9.6) on first run only, so upgrading doesn't silently change
+    behavior for anyone who already set those — from then on this DB config is what's
+    actually read; the env vars are ignored."""
+    return {
+        "enabled": True,
+        "max_attempts": int(os.environ.get("LOGIN_MAX_ATTEMPTS", "5")),
+        "window_minutes": int(os.environ.get("LOGIN_WINDOW_MINUTES", "5")),
+        "ban_minutes": int(os.environ.get("LOGIN_BAN_MINUTES", "15")),
+    }
+
+
 def _merge_defaults(target, defaults):
     """Recursively fill missing keys in `target` from `defaults` (in place)."""
     for key, val in defaults.items():
@@ -95,7 +108,7 @@ def _merge_defaults(target, defaults):
 def _empty_db():
     return {"users": [], "accounts": [], "providers": [], "groups": [],
             "backup": _default_backup(), "sync_jobs": [], "bucket_config_snapshots": [],
-            "_providers_seeded": False}
+            "login_protection": _default_login_protection(), "_providers_seeded": False}
 
 
 def _load():
@@ -113,6 +126,7 @@ def _load():
     data.setdefault("bucket_config_snapshots", [])
     data.setdefault("_providers_seeded", False)
     _merge_defaults(data.setdefault("backup", {}), _default_backup())
+    _merge_defaults(data.setdefault("login_protection", {}), _default_login_protection())
     return data
 
 
@@ -559,6 +573,27 @@ def record_backup_result(*, status, error=None, archive=None):
         )
         _save(data)
         return data["backup"]
+
+
+def get_login_protection():
+    """Brute-force guard settings (Administration > Sécurité)."""
+    return _load()["login_protection"]
+
+
+def update_login_protection(*, enabled, max_attempts, window_minutes, ban_minutes):
+    max_attempts, window_minutes, ban_minutes = int(max_attempts), int(window_minutes), int(ban_minutes)
+    if max_attempts < 1:
+        raise ValueError("Le nombre d'essais avant bannissement doit être d'au moins 1")
+    if window_minutes < 1 or ban_minutes < 1:
+        raise ValueError("La fenêtre et la durée de bannissement doivent être d'au moins 1 minute")
+    with _lock:
+        data = _load()
+        data["login_protection"] = {
+            "enabled": bool(enabled), "max_attempts": max_attempts,
+            "window_minutes": window_minutes, "ban_minutes": ban_minutes,
+        }
+        _save(data)
+        return data["login_protection"]
 
 
 # --- Sync jobs -------------------------------------------------------------

@@ -124,6 +124,26 @@ def backup_restore():
     return redirect(url_for("admin.backup_page"))
 
 
+@bp.route("/security", methods=["GET", "POST"])
+@admin_required
+def security_page():
+    if request.method == "POST":
+        f = request.form
+        try:
+            storage.update_login_protection(
+                enabled=f.get("enabled"),
+                max_attempts=f.get("max_attempts", 5),
+                window_minutes=f.get("window_minutes", 5),
+                ban_minutes=f.get("ban_minutes", 15),
+            )
+            audit.log("admin", "security_config", "Configuration anti-bruteforce mise à jour")
+            flash("Configuration enregistrée", "success")
+            return redirect(url_for("admin.security_page"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+    return render_template("admin_security.html", cfg=storage.get_login_protection())
+
+
 # --- Synchronisation (vue globale) ------------------------------------------
 # Chaque utilisateur gère ses propres jobs sur /sync ; cette page admin ne fait que
 # superviser : désactiver un job qui déraille, ou le reprendre à son nom (un admin a

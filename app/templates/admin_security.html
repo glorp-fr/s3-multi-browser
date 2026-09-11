@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Sécurité — Admin{% endblock %}
+{% block content %}
+<h1 class="stitle">Sécurité</h1>
+<p class="hint">Protection anti-bruteforce sur la page de connexion : après un certain nombre
+  d'échecs depuis une même adresse IP, cette IP est temporairement bloquée — équivalent
+  applicatif à un fail2ban, effectif sans redémarrer l'appli.</p>
+
+<form class="form-card" method="post">
+  <label class="checkbox-row">
+    <input type="checkbox" name="enabled" {{ "checked" if cfg.enabled else "" }}>
+    Activer la protection anti-bruteforce
+  </label>
+  <p class="hint">
+    ⚠ Désactive-la seulement si tu es certain que l'accès à cette instance est déjà maîtrisé
+    autrement (réseau privé, VPN…) — ou si elle tourne derrière un reverse proxy qui ne
+    transmet pas l'en-tête <code>X-Forwarded-For</code> : dans ce cas toutes les requêtes
+    paraissent venir de l'IP du proxy et un bannissement bloquerait tout le monde d'un coup.
+  </p>
+
+  <label>Nombre d'échecs avant bannissement
+    <input type="number" name="max_attempts" min="1" value="{{ cfg.max_attempts }}" style="width:6em">
+  </label>
+  <label>Fenêtre glissante <span class="hint">(minutes)</span>
+    <input type="number" name="window_minutes" min="1" value="{{ cfg.window_minutes }}" style="width:6em">
+  </label>
+  <label>Durée du bannissement <span class="hint">(minutes)</span>
+    <input type="number" name="ban_minutes" min="1" value="{{ cfg.ban_minutes }}" style="width:6em">
+  </label>
+
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+{% endblock %}
