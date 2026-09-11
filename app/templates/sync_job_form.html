@@ -42,7 +42,17 @@
       </label>
     </fieldset>
     <label data-scope="prefix object">Clé / préfixe source <span class="hint">(ex. <code>dossier/sous-dossier/</code> ou <code>dossier/fichier.txt</code>)</span>
-      <input type="text" name="source_value" class="mono" value="{{ job.source.value if job else '' }}">
+      <div class="path-picker" data-pathpicker data-browse-endpoint="{{ url_for('sync.browse') }}"
+           data-account-select="source_account_id" data-bucket-select="source_bucket"
+           data-perm="download" data-allow-objects="1">
+        <input type="text" name="source_value" class="mono" value="{{ job.source.value if job else '' }}">
+        <button type="button" class="btn ghost sm" data-browse-btn>{{ macros.icon("search") }} Parcourir…</button>
+        <div class="path-browser" hidden data-browse-panel>
+          <div class="path-breadcrumb" data-breadcrumb></div>
+          <button type="button" class="btn ghost sm" data-use-current>Utiliser ce dossier</button>
+          <ul class="path-list" data-list></ul>
+        </div>
+      </div>
     </label>
   </fieldset>
 
@@ -62,7 +72,17 @@
       </select>
     </label>
     <label>Préfixe destination <span class="hint">(optionnel — les objets gardent leur chemin relatif sous ce préfixe)</span>
-      <input type="text" name="dest_prefix" class="mono" value="{{ job.dest.prefix if job else '' }}" placeholder="ex. archives/">
+      <div class="path-picker" data-pathpicker data-browse-endpoint="{{ url_for('sync.browse') }}"
+           data-account-select="dest_account_id" data-bucket-select="dest_bucket"
+           data-perm="upload" data-allow-objects="0">
+        <input type="text" name="dest_prefix" class="mono" value="{{ job.dest.prefix if job else '' }}" placeholder="ex. archives/">
+        <button type="button" class="btn ghost sm" data-browse-btn>{{ macros.icon("search") }} Parcourir…</button>
+        <div class="path-browser" hidden data-browse-panel>
+          <div class="path-breadcrumb" data-breadcrumb></div>
+          <button type="button" class="btn ghost sm" data-use-current>Utiliser ce dossier</button>
+          <ul class="path-list" data-list></ul>
+        </div>
+      </div>
     </label>
   </fieldset>
 
@@ -175,4 +195,5 @@
   wireBucketSelect(document.getElementById('dest_account_id'), document.getElementById('dest_bucket'), 'upload');
 })();
 </script>
+<script src="{{ url_for('static', filename='pathpicker.js') }}"></script>
 {% endblock %}

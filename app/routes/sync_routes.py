@@ -152,6 +152,35 @@ def list_buckets():
     return jsonify(buckets=names)
 
 
+@bp.route("/browse")
+@login_required
+def browse():
+    """JSON {folders, objects} one level under `prefix` — feeds the inline path picker on
+    the source key/prefix and destination prefix fields. Same bounded scope as the
+    explorer's own folder navigation (Delimiter="/", never a recursive whole-bucket scan)."""
+    account_id = request.args.get("account_id", "")
+    perm = request.args.get("perm", "")
+    bucket = request.args.get("bucket", "")
+    prefix = request.args.get("prefix", "")
+    if perm not in ("download", "upload"):
+        return jsonify(folders=[], objects=[], error="Paramètre invalide"), 400
+    if not can(g.user, account_id, perm):
+        abort(403)
+    account = storage.get_account_by_id(account_id)
+    if not account or not bucket:
+        return jsonify(folders=[], objects=[])
+    folders, objects = [], []
+    try:
+        client = get_client(account)
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix, Delimiter="/"):
+            folders.extend(c["Prefix"] for c in page.get("CommonPrefixes", []))
+            objects.extend(o["Key"] for o in page.get("Contents", []) if o["Key"] != prefix)
+    except ClientError as exc:
+        return jsonify(folders=[], objects=[], error=f"Erreur OOS : {exc}")
+    return jsonify(folders=sorted(folders), objects=sorted(objects))
+
+
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def job_new():

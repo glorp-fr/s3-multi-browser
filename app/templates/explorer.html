@@ -77,7 +77,17 @@
     <select name="dest_bucket" id="dest_bucket">
       <option value="">— choisir un compte —</option>
     </select>
-    <input type="text" name="dest_prefix" class="mono" placeholder="préfixe destination (optionnel)">
+    <div class="path-picker" data-pathpicker data-browse-endpoint="{{ url_for('sync.browse') }}"
+         data-account-select="dest_account_id" data-bucket-select="dest_bucket"
+         data-perm="upload" data-allow-objects="0">
+      <input type="text" name="dest_prefix" class="mono" placeholder="préfixe destination (optionnel)">
+      <button type="button" class="btn ghost sm" data-browse-btn>{{ macros.icon("search") }} Parcourir…</button>
+      <div class="path-browser" hidden data-browse-panel>
+        <div class="path-breadcrumb" data-breadcrumb></div>
+        <button type="button" class="btn ghost sm" data-use-current>Utiliser ce dossier</button>
+        <ul class="path-list" data-list></ul>
+      </div>
+    </div>
     <button class="btn ghost sm" type="submit" name="action" value="copy" data-bulk-action disabled
             data-bulk-confirm="Copier les %n élément(s) sélectionné(s) vers la destination indiquée ?">
       {{ macros.icon("copy") }} Copier la sélection
@@ -144,6 +154,7 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='bulk.js') }}"></script>
 {% if dest_accounts %}
+<script src="{{ url_for('static', filename='pathpicker.js') }}"></script>
 <script>
 (function () {
   var accountSel = document.getElementById('dest_account_id');

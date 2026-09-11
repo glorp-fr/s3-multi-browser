@@ -372,3 +372,16 @@ a:hover { text-decoration: underline; }
   background: var(--panel-2); overflow: hidden;
 }
 .sync-progress-bar { height: 100%; background: var(--warn); transition: width .4s ease; }
+
+.path-picker { display: flex; gap: 8px; align-items: center; }
+.path-picker input { flex: 1; }
+.path-browser {
+  margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); max-height: 220px; overflow-y: auto;
+}
+.path-breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.path-breadcrumb a { color: var(--text-muted); }
+.path-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.path-list li { padding: 4px 0; font-size: 13px; }
+.path-list a { text-decoration: none; color: var(--text-dim); }
+.path-list a:hover { color: var(--os-blue-mid); }

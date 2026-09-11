@@ -40,6 +40,24 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Synchronisation — navigateur de préfixe/objet en liste (v0.8.2)
+
+Même traitement que le bucket (v0.8.1) appliqué aux champs de chemin : la clé/préfixe source
+(`sync_job_form.html`) et le préfixe destination (formulaire de job **et** bulk « Copier vers… »
+de l'explorateur) proposent désormais un bouton **Parcourir…** ouvrant un petit navigateur en
+ligne (fil d'Ariane + liste dossiers/objets du niveau courant) plutôt que de ne compter que sur la
+saisie libre — celle-ci reste possible, le picker ne fait que pré-remplir le champ.
+
+- **`GET /sync/browse?account_id=&perm=&bucket=&prefix=`** (JSON `{folders, objects}`) : un
+  niveau à la fois (`Delimiter="/"`), même principe de portée bornée que la navigation de
+  l'explorateur (pas de scan récursif). Droit revérifié côté serveur comme `/sync/buckets`.
+- **`app/static/pathpicker.js`** (nouveau, vanilla) : widget déclaratif générique
+  (`data-pathpicker` + `data-account-select` / `data-bucket-select` / `data-perm` /
+  `data-allow-objects`), navigation dossier par dossier, clic sur un objet = sélection directe
+  (uniquement proposé côté source, portée objet/préfixe), bouton « Utiliser ce dossier » pour
+  fixer le préfixe courant. Se réinitialise si le compte ou le bucket change.
+- CSS `.path-picker` / `.path-browser` / `.path-breadcrumb` / `.path-list`.
+
 ### Synchronisation — sélection du bucket en liste (v0.8.1)
 
 Les champs bucket source/destination du formulaire de job (`sync_job_form.html`) et le
