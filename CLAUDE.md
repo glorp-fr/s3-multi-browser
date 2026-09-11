@@ -40,6 +40,39 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Restauration de la sauvegarde de configuration (v0.9.5)
+
+La sauvegarde (S3/SMB) existait sans symétrique pour l'importer — demande de l'utilisateur : un
+choix de sauvegarde à restaurer issu de la liste des sauvegardes déjà réalisées. Choix validé
+avant implémentation : restaure **db.json + le journal d'audit ensemble**, à l'identique du
+contenu de l'archive (symétrique avec ce que fait la sauvegarde), pas juste la config en gardant
+le journal actuel.
+
+- **`app/backup.py`** : `list_backups()` (S3 ou SMB selon la destination configurée, triée du
+  plus récent au plus ancien), `restore_backup(name, actor=...)` — télécharge l'archive, vérifie
+  que `db.json` y est présent et que son JSON est valide **avant de toucher au disque**, copie
+  l'état remplacé dans `data/pre-restore-backup/<fichier>.<horodatage>.bak` (jamais envoyé nulle
+  part — undo manuel possible), puis écrit `db.json`/`audit.jsonl`/`audit.jsonl.1` (les seuls
+  présents dans l'archive) via écriture atomique (`os.replace`, même pattern que `storage._save`).
+  L'entrée d'audit de la restauration elle-même est écrite **après** avoir restauré le journal —
+  elle atterrit donc dans le journal qui vient d'être remis en place, marquant clairement où la
+  restauration a eu lieu dans l'historique repris. `_valid_archive_name` (nom sans aucun `/` ni
+  `\`) plutôt que le motif plus permissif `_is_archive` utilisé pour le listing — le nom vient
+  d'un champ de formulaire, donc traité comme non fiable même si la route est admin-only (défense
+  en profondeur contre une traversée de chemin sur la cible SMB).
+- **`admin_routes.py`** : `backup_page()` (GET) liste aussi les sauvegardes disponibles (erreur de
+  connexion à la destination affichée, jamais fatale à la page) ; nouvelle route
+  `POST /admin/backup/restore`.
+- **`admin_backup.html`** : section « Restaurer une sauvegarde » — `<select>` des archives
+  disponibles (nom, taille, date) + confirmation JS explicite nommant l'archive avant tout envoi.
+- **Verrou partagé avec la sauvegarde** (`_run_lock`) : une restauration ne peut pas se chevaucher
+  avec une sauvegarde planifiée en cours, et réciproquement.
+- **Tests** (moto, non versionné) : deux sauvegardes successives (un compte « marker » ajouté
+  entre les deux) puis restauration de la **plus ancienne** → le compte marker disparaît bien ;
+  copie de sécurité présente sur disque ; entrée d'audit de la restauration bien présente dans le
+  journal restauré ; nom d'archive à traversée de chemin rejeté ; aller-retour HTTP complet
+  (page + POST restore) via le client de test Flask.
+
 ### Fix : le formulaire de création de bucket restait visible malgré `hidden` (v0.9.4)
 
 Remonté par l'utilisateur en testant v0.9.1+ en réel : le formulaire dépliable de création de

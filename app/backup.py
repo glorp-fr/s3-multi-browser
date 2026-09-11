@@ -8,7 +8,9 @@ it synchronously via "Sauvegarder maintenant".
 Times are UTC (the server runs in UTC, like the audit log).
 """
 import io
+import json
 import os
+import shutil
 import tarfile
 import threading
 from datetime import datetime, timedelta, timezone
@@ -132,10 +134,116 @@ def _push_smb(cfg, name, blob):
     return target_dir, pruned
 
 
-# --- run --------------------------------------------------------------------
-
 _run_lock = threading.Lock()
 
+
+# --- listing / fetching (for restore) ---------------------------------------
+
+def _valid_archive_name(name):
+    """Stricter than _is_archive: no path separators at all — `name` here always comes
+    from a form field, so this guards against path traversal on the SMB share (an S3 key
+    with '/' is comparatively harmless — same bucket only — but reject it here too, no
+    valid archive name ever contains one)."""
+    return (
+        isinstance(name, str) and "/" not in name and "\\" not in name
+        and name.startswith(ARCHIVE_PREFIX) and name.endswith(ARCHIVE_SUFFIX)
+    )
+
+
+def list_backups():
+    """[{name, size, last_modified}] on the currently configured destination, newest first.
+    Raises on misconfiguration/connection error — caller flashes it."""
+    cfg = storage.get_backup_config()
+    if cfg["destination"] == "smb":
+        sc, target_dir, _unc, _sub = _smb(cfg)
+        items = []
+        for n in sc.listdir(target_dir):
+            if _is_archive(n):
+                info = sc.stat(target_dir + "\\" + n)
+                items.append({
+                    "name": n, "size": info.st_size,
+                    "last_modified": datetime.fromtimestamp(info.st_mtime, tz=timezone.utc),
+                })
+    else:
+        client = _s3_client(cfg)
+        prefix = _s3_prefix(cfg)
+        items = []
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=cfg["s3"]["bucket"], Prefix=prefix):
+            for o in page.get("Contents", []):
+                if _is_archive(o["Key"]):
+                    items.append({
+                        "name": o["Key"][len(prefix):], "size": o["Size"],
+                        "last_modified": o["LastModified"],
+                    })
+    items.sort(key=lambda i: i["name"], reverse=True)
+    return items
+
+
+def _fetch(cfg, name):
+    if cfg["destination"] == "smb":
+        sc, target_dir, _unc, _sub = _smb(cfg)
+        with sc.open_file(target_dir + "\\" + name, mode="rb") as fh:
+            return fh.read()
+    client = _s3_client(cfg)
+    resp = client.get_object(Bucket=cfg["s3"]["bucket"], Key=_s3_prefix(cfg) + name)
+    return resp["Body"].read()
+
+
+# --- restore ------------------------------------------------------------------
+
+SAFETY_DIR = os.path.join(DATA_DIR, "pre-restore-backup")
+
+
+def restore_backup(name, *, actor="admin"):
+    """Downloads the named archive and overwrites the current config files with its
+    content. Never raises — returns {ok, message}. A copy of whatever gets overwritten is
+    kept in data/pre-restore-backup/ (local disk, never shipped anywhere) so a mistaken
+    restore can still be undone by hand."""
+    if not _run_lock.acquire(blocking=False):
+        return {"ok": False, "message": "Une sauvegarde/restauration est déjà en cours."}
+    try:
+        if not _valid_archive_name(name):
+            return {"ok": False, "message": "Nom d'archive invalide."}
+        cfg = storage.get_backup_config()
+        blob = _fetch(cfg, name)
+        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
+            members = {m.name: m for m in tar.getmembers() if m.isfile() and m.name in _MEMBERS}
+            if "db.json" not in members:
+                return {"ok": False, "message": "Archive invalide : db.json absent."}
+            contents = {n: tar.extractfile(m).read() for n, m in members.items()}
+        json.loads(contents["db.json"])  # sanity check before touching anything on disk
+
+        os.makedirs(SAFETY_DIR, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        for member in _MEMBERS:
+            path = os.path.join(DATA_DIR, member)
+            if os.path.isfile(path):
+                shutil.copy2(path, os.path.join(SAFETY_DIR, f"{member}.{ts}.bak"))
+
+        for member, data in contents.items():
+            path = os.path.join(DATA_DIR, member)
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "wb") as f:
+                f.write(data)
+            os.replace(tmp_path, path)
+
+        # Appended *after* restoring — lands in the just-restored audit.jsonl, marking
+        # exactly where the restore happened in the resumed history.
+        audit.log("admin", "backup_restore", f"Configuration restaurée depuis « {name} »",
+                  actor=actor, target=name)
+        return {"ok": True, "message": f"Configuration restaurée depuis « {name} ». "
+                                        f"L'état précédent a été gardé dans "
+                                        f"data/pre-restore-backup/ ({ts})."}
+    except Exception as exc:  # noqa: BLE001 - surface any failure, keep the app alive
+        audit.log("admin", "backup_restore", f"Échec de la restauration depuis « {name} » : {exc}",
+                  actor=actor, status="fail")
+        return {"ok": False, "message": f"Échec de la restauration : {exc}"}
+    finally:
+        _run_lock.release()
+
+
+# --- run --------------------------------------------------------------------
 
 def run_backup(*, actor="scheduler"):
     """Build + ship one archive. Never raises — returns {ok, message, ...}."""

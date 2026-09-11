@@ -93,14 +93,33 @@ def backup_page():
             return redirect(url_for("admin.backup_page"))
         except ValueError as exc:
             flash(str(exc), "error")
+
+    backups, backups_error = [], None
+    try:
+        backups = backup.list_backups()
+    except Exception as exc:  # noqa: BLE001 - misconfigured/unreachable destination
+        backups_error = str(exc)
     return render_template("admin_backup.html", cfg=storage.get_backup_config(),
-                           next_run=backup.next_run_display())
+                           next_run=backup.next_run_display(),
+                           backups=backups, backups_error=backups_error)
 
 
 @bp.route("/backup/run", methods=["POST"])
 @admin_required
 def backup_run():
     result = backup.run_backup(actor=g.user["username"])
+    flash(result["message"], "success" if result["ok"] else "error")
+    return redirect(url_for("admin.backup_page"))
+
+
+@bp.route("/backup/restore", methods=["POST"])
+@admin_required
+def backup_restore():
+    name = request.form.get("name", "")
+    if not name:
+        flash("Choisir une sauvegarde à restaurer", "error")
+        return redirect(url_for("admin.backup_page"))
+    result = backup.restore_backup(name, actor=g.user["username"])
     flash(result["message"], "success" if result["ok"] else "error")
     return redirect(url_for("admin.backup_page"))
 

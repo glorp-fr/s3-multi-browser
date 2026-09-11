@@ -120,6 +120,32 @@
   <button class="btn ghost" type="submit">{{ macros.icon("save") }} Sauvegarder maintenant</button>
 </form>
 
+<h2 class="stitle" style="margin-top:28px; font-size:16px;">Restaurer une sauvegarde</h2>
+<p class="hint">Remplace comptes, utilisateurs, groupes, jobs de synchronisation, configuration de
+  sauvegarde <strong>et le journal d'audit</strong> par le contenu de l'archive choisie — action
+  <strong>immédiate et destructrice</strong> pour la config en cours. Une copie de l'état
+  remplacé est gardée dans <code>data/pre-restore-backup/</code> (jamais envoyée nulle part) pour
+  pouvoir revenir en arrière à la main si besoin. La liste ci-dessous vient de la destination
+  configurée ci-dessus (S3 ou SMB).</p>
+
+{% if backups_error %}
+<p class="hint">Impossible de lister les sauvegardes disponibles : {{ backups_error }}</p>
+{% elif not backups %}
+<p class="hint">Aucune sauvegarde disponible sur la destination configurée.</p>
+{% else %}
+<form class="form-card" method="post" action="{{ url_for('admin.backup_restore') }}"
+      onsubmit="return confirm('Restaurer « ' + this.name.value + ' » ? Ceci remplace immédiatement la configuration et le journal d\'audit actuels par ceux de cette archive.');">
+  <label>Sauvegarde à restaurer
+    <select name="name" required>
+      {% for b in backups %}
+      <option value="{{ b.name }}">{{ b.name }} — {{ b.size | format_size }} — {{ b.last_modified.strftime('%d/%m/%Y %H:%M') }} UTC</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn red" type="submit">{{ macros.icon("undo") }} Restaurer cette sauvegarde</button>
+</form>
+{% endif %}
+
 <script>
 (function () {
   const form = document.getElementById('backup-form');

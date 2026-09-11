@@ -81,6 +81,13 @@ chiffré côté serveur.
   au repos (Fernet, comme les comptes S3). Un minuteur interne au process rejoue la sauvegarde ;
   bouton **Sauvegarder maintenant** pour un déclenchement synchrone. Garder **un seul worker
   gunicorn** (sinon chaque worker planifie sa propre sauvegarde).
+  **Restauration** : la page liste les archives disponibles sur la destination configurée
+  (S3 ou SMB) ; choisir une archive et confirmer remplace immédiatement `db.json` **et** le
+  journal d'audit par son contenu (comptes, utilisateurs, groupes, jobs de synchronisation,
+  config de sauvegarde inclus). Action destructrice pour la config en cours, confirmée
+  explicitement ; une copie de ce qui est remplacé est gardée localement dans
+  `data/pre-restore-backup/` (jamais envoyée nulle part) pour pouvoir revenir en arrière à la
+  main en cas d'erreur.
 - **Version & mises à jour** (`Administration → Version`) : version courante = fichier `VERSION`
   (semver). Deux modes selon le déploiement :
   - **checkout git** (gunicorn sur l'hôte) : *Vérifier* compare le commit local au dernier commit de
