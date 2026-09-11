@@ -14,6 +14,12 @@ chiffré côté serveur.
   regroupés par provider dans la liste des comptes.
 - **Utilisateurs** : soit **administrateur** (accès total, gère providers/comptes/groupes/utilisateurs),
   soit utilisateur standard dont les accès découlent uniquement de ses **groupes**.
+- **Anti-bruteforce sur `/login`** : après `LOGIN_MAX_ATTEMPTS` échecs (défaut 5) depuis une même
+  adresse IP en moins de `LOGIN_WINDOW_MINUTES` (défaut 5 min), cette IP est bannie pendant
+  `LOGIN_BAN_MINUTES` (défaut 15 min) — bloquée avant même de vérifier les identifiants (HTTP 429),
+  quel que soit l'utilisateur visé. Protection en mémoire, propre au process (cohérent avec le
+  mono-worker gunicorn déjà requis par le stockage fichier) : équivalent applicatif à fail2ban,
+  qui ne s'intègre pas au modèle de distribution en image Docker de ce projet.
 - **Groupes** (`Administration → Groupes`) : unité de contrôle d'accès. Un groupe couvre un ensemble
   de comptes S3 (liste explicite ou « tous les comptes ») et porte un jeu de droits fins : `download`,
   `upload`, `delete`, `bucket_admin` (créer/supprimer des buckets, éditer leur configuration —
@@ -109,6 +115,9 @@ chiffré côté serveur.
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | au premier démarrage | Crée le premier compte admin si aucun utilisateur n'existe encore. |
 | `MULTI_S3_BROWSER_DATA_DIR` | non | Répertoire de stockage de `db.json`, `usage_cache.json`, `audit.jsonl` et `version_check.json` (défaut : `./data`). L'ancien nom `OOS_VIEWER_DATA_DIR` reste accepté en repli. |
 | `MAX_UPLOAD_MB` | non | Taille max d'upload en Mo (défaut : 512). |
+| `LOGIN_MAX_ATTEMPTS` | non | Nombre d'échecs de connexion depuis une même IP avant bannissement temporaire (défaut : 5). |
+| `LOGIN_WINDOW_MINUTES` | non | Fenêtre glissante sur laquelle ces échecs sont comptés (défaut : 5). |
+| `LOGIN_BAN_MINUTES` | non | Durée du bannissement une fois le seuil atteint (défaut : 15). |
 | `UPDATE_REPO` | non | Dépôt GitHub `owner/name` interrogé pour les mises à jour — commits (mode git) ou releases (mode image). Défaut : `glorp-fr/s3-multi-browser`. |
 | `GITHUB_TOKEN` | non | Jeton pour la vérification de mise à jour si le dépôt est privé ou pour éviter le quota API anonyme. Lecture seule (`contents:read`) suffit. |
 | `UPDATE_AUTO_RELOAD` | non | Mode git : `1` (défaut) recharge gunicorn automatiquement après une mise à jour ; `0` = redémarrage manuel. |

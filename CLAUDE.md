@@ -40,6 +40,36 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Anti-bruteforce sur /login (v0.9.6)
+
+Demande initiale de l'utilisateur : « un fail2ban pour sécuriser contre le bruteforce ? ». fail2ban
+lui-même écarté après clarification (périmètre = le login de l'appli, pas ce Bastion) : c'est un
+démon qui lit des logs hôte et manipule le firewall hôte, incompatible avec le modèle de
+distribution de ce projet (image Docker livrée à des auto-hébergeurs externes qui n'auront
+généralement pas fail2ban configuré pour un conteneur applicatif). Reproduit à la place en
+applicatif : `app/login_guard.py`, garde en mémoire process-local (cohérente avec le mono-worker
+gunicorn déjà imposé par le stockage fichier, même esprit que `usage_cache.py`/`backup.py`) — N
+échecs (`LOGIN_MAX_ATTEMPTS`, défaut 5) depuis une IP en moins de `LOGIN_WINDOW_MINUTES` (défaut
+5 min) bannissent cette IP pendant `LOGIN_BAN_MINUTES` (défaut 15 min), **avant** toute
+vérification des identifiants (HTTP 429), quel que soit l'utilisateur visé (protège aussi contre
+une énumération de comptes valides, pas seulement le bruteforce d'un compte donné). Un login
+réussi remet le compteur d'échecs à zéro pour cette IP.
+
+- **`app/routes/auth_routes.py`** : IP extraite via `X-Forwarded-For` sinon `remote_addr` (même
+  logique que `audit._client_ip()`, dupliquée localement plutôt que de sortir cette fonction de
+  son module — pas assez de duplication pour justifier le couplage). **Caveat noté dans le code** :
+  sans `ProxyFix`/liste de proxys de confiance (absent du projet à ce jour), une appli derrière un
+  reverse proxy qui ne pose pas cet en-tête verrait toutes les requêtes comme venant du proxy —
+  bannirait tout le monde d'un coup. À revisiter si/quand un reverse proxy est mis devant l'appli.
+  Événements d'audit dédiés : `login_blocked` (requête rejetée parce que déjà bannie) et
+  `login_lockout` (l'échec qui vient de déclencher le bannissement), en plus de `login_failed`/
+  `login` déjà existants.
+- **Tests** (client de test Flask, non versionné) : seuil atteint après N échecs ⇒ la requête
+  suivante est bloquée (429) même avec le bon mot de passe ; une IP différente (simulée via
+  `X-Forwarded-For`) n'est pas affectée par le bannissement d'une autre ; un succès remet le
+  compteur à zéro (2 échecs + 1 succès + 2 échecs ne déclenche pas le bannissement, contrairement
+  à 3 échecs consécutifs sans succès entre-temps).
+
 ### Restauration de la sauvegarde de configuration (v0.9.5)
 
 La sauvegarde (S3/SMB) existait sans symétrique pour l'importer — demande de l'utilisateur : un
