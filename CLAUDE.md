@@ -40,6 +40,27 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Captures d'écran dans le README (doc uniquement, pas de bump de VERSION)
+
+L'utilisateur a fourni 7 captures (dans `s3browser.zip`, extrait en `s3browser/` à la racine du
+projet). **2 des 7 exposaient des données sensibles non caviardées avant insertion** — signalé à
+l'utilisateur avant d'agir (le dépôt GitHub est **public**, vérifié via l'API `GET /repos/...`
+→ `private: false`) :
+- Capture ACL : ID de compte canonique du propriétaire (« 648680786034 ») visible en clair alors
+  que la ligne de bénéficiaire juste dessous était déjà caviardée par l'utilisateur.
+- Capture Logs : nom d'utilisateur réel (« nassim ») et deux IP publiques réelles en clair sur
+  toutes les lignes.
+
+Choix de l'utilisateur : caviarder ces deux (plutôt que les exclure ou les publier telles
+quelles) — bandeaux noirs ajoutés avec Pillow (installé temporairement dans le venv local,
+retiré après usage, jamais dans `requirements.txt`) sur les zones concernées uniquement, reste de
+l'image intact. Les 6 captures retenues (une redondante entre deux captures quasi-identiques du
+formulaire de création de bucket) rangées dans **`docs/screenshots/`** (nouveau, tracké par git,
+noms descriptifs en anglais plutôt que les noms macOS d'origine) et insérées dans une section
+« Captures d'écran » du README, juste sous l'intro. Le zip, le dossier `s3browser/` extrait et le
+`__MACOSX/` de bruit d'extraction macOS supprimés du projet une fois leur contenu utile copié dans
+`docs/screenshots/` (aucun des trois n'était suivi par git).
+
 ### Fix : favicon incohérente avec le logo (v0.9.8)
 
 `app/static/assets/favicon.png` n'avait rien à voir avec le logo GLORP affiché en haut à gauche

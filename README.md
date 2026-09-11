@@ -5,6 +5,14 @@ S3 (Outscale OOS, AWS S3, tout autre provider S3-compatible), avec gestion multi
 multi-comptes et multi-utilisateurs. Pas de base de données : tout est stocké dans un fichier JSON
 chiffré côté serveur.
 
+## Captures d'écran
+
+| | |
+|---|---|
+| ![Création de bucket avec options](docs/screenshots/bucket-create-form.png) Création de bucket (versionning, verrouillage, lifecycle) | ![Job de synchronisation](docs/screenshots/sync-job-form.png) Nouveau job de synchronisation entre buckets |
+| ![Configuration — Versionning](docs/screenshots/bucket-config-versioning.png) Configuration de bucket — Versionning (avec annulation) | ![Configuration — Policy](docs/screenshots/bucket-config-policy.png) Configuration de bucket — Policy (JSON IAM) |
+| ![Configuration — ACL](docs/screenshots/bucket-config-acl.png) Configuration de bucket — ACL, accès par compte | ![Logs temps réel](docs/screenshots/admin-logs.png) Administration — Logs en temps réel |
+
 ## Fonctionnalités
 
 - **Providers** : Outscale et AWS préconfigurés au premier démarrage (endpoint + liste de régions), et
