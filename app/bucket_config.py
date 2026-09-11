@@ -199,10 +199,42 @@ def detect_canned_acl(snapshot):
     return None
 
 
-def apply_canned_acl(client, bucket, canned):
-    if canned not in CANNED_ACLS:
+GRANT_PERMISSIONS = ("READ", "WRITE", "READ_ACP", "WRITE_ACP", "FULL_CONTROL")
+
+_CANNED_EXTRA_GRANTS = {
+    "private": [],
+    "public-read": [{"uri": _ALL_USERS_URI, "permission": "READ"}],
+    "public-read-write": [
+        {"uri": _ALL_USERS_URI, "permission": "READ"},
+        {"uri": _ALL_USERS_URI, "permission": "WRITE"},
+    ],
+    "authenticated-read": [{"uri": _AUTH_USERS_URI, "permission": "READ"}],
+}
+
+
+def apply_acl(client, bucket, owner, canned, account_grants):
+    """Apply an ACL built from an optional canned preset plus explicit per-account grants,
+    in a single put_bucket_acl(AccessControlPolicy=...) call — the only way to combine both,
+    since `ACL=<canned>` on its own replaces the whole grant list. `owner` is the raw Owner
+    dict from get_acl(); `account_grants` is a list of {"identifier_type": "id"|"email",
+    "identifier": str, "permission": str}."""
+    if canned and canned not in CANNED_ACLS:
         raise ValueError("ACL prédéfinie invalide")
-    client.put_bucket_acl(Bucket=bucket, ACL=canned)
+    grants = [{"Grantee": {"Type": "CanonicalUser", "ID": owner["ID"]}, "Permission": "FULL_CONTROL"}]
+    for extra in _CANNED_EXTRA_GRANTS.get(canned, []):
+        grants.append({"Grantee": {"Type": "Group", "URI": extra["uri"]}, "Permission": extra["permission"]})
+    for g in account_grants:
+        if g["permission"] not in GRANT_PERMISSIONS:
+            raise ValueError("Permission invalide")
+        identifier = g["identifier"].strip()
+        if not identifier:
+            continue
+        if g["identifier_type"] == "email":
+            grantee = {"Type": "AmazonCustomerByEmail", "EmailAddress": identifier}
+        else:
+            grantee = {"Type": "CanonicalUser", "ID": identifier}
+        grants.append({"Grantee": grantee, "Permission": g["permission"]})
+    client.put_bucket_acl(Bucket=bucket, AccessControlPolicy={"Owner": owner, "Grants": grants})
 
 
 def restore_acl(client, bucket, snapshot):

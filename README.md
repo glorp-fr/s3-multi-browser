@@ -51,8 +51,9 @@ chiffré côté serveur.
     préremplit la nouvelle valeur à partir de l'actuelle (pour l'ACL, seulement si l'actuelle
     correspond à une valeur prédéfinie reconnue — sinon le bouton est désactivé, l'ACL courante
     étant des grants personnalisés non représentables tels quels). Policy en éditeur JSON IAM brut ;
-    ACL limitée aux valeurs prédéfinies (`private`, `public-read`, …) avec confirmation avant tout
-    accès public.
+    ACL = une valeur prédéfinie (`private`, `public-read`, …, avec confirmation avant tout accès
+    public) **et/ou** des accès par compte ciblés (ID canonique S3 ou email, une permission par
+    accès ajouté), les deux combinés en un seul appel S3.
 - **Synchronisation entre buckets** (`/sync`) : jobs planifiés de copie objet / préfixe / bucket
   entier vers un autre bucket, **cross-compte et cross-provider** (les objets transitent par le
   serveur en flux, jamais bufferisés). Suppression des objets absents de la source **optionnelle**

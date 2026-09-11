@@ -77,6 +77,7 @@ def config(account_id, bucket):
         "bucket_config.html", account=account, bucket=bucket, state=state, errors=errors,
         policy_pretty=policy_pretty, snapshots=snapshots, canned_acls=bucket_config.CANNED_ACLS,
         public_acls=bucket_config.PUBLIC_ACLS, acl_detected=acl_detected,
+        grant_permissions=bucket_config.GRANT_PERMISSIONS,
     )
 
 
@@ -193,6 +194,23 @@ def policy(account_id, bucket):
     return _back(account_id, bucket)
 
 
+def _parse_account_grants(form):
+    grants = []
+    types = form.getlist("grant_identifier_type")
+    identifiers = form.getlist("grant_identifier")
+    permissions = form.getlist("grant_permission")
+    for i, identifier in enumerate(identifiers):
+        identifier = identifier.strip()
+        if not identifier:
+            continue
+        grants.append({
+            "identifier_type": types[i] if i < len(types) else "id",
+            "identifier": identifier,
+            "permission": permissions[i] if i < len(permissions) else "READ",
+        })
+    return grants
+
+
 @bp.route("/accounts/<account_id>/buckets/<bucket>/config/acl", methods=["POST"])
 @login_required
 def acl(account_id, bucket):
@@ -200,15 +218,17 @@ def acl(account_id, bucket):
     _require_bucket_admin(account_id)
     client = get_client(account)
     canned = request.form.get("canned", "")
-    if not canned:
-        flash("Choisir une ACL avant d'enregistrer", "error")
+    account_grants = _parse_account_grants(request.form)
+    if not canned and not account_grants:
+        flash("Choisir une ACL prédéfinie ou ajouter au moins un accès par compte avant d'enregistrer", "error")
         return _back(account_id, bucket)
     try:
         before = bucket_config.get_acl(client, bucket)
-        bucket_config.apply_canned_acl(client, bucket, canned)
+        bucket_config.apply_acl(client, bucket, before["owner"], canned or None, account_grants)
         _save_snapshot(account_id, bucket, "acl", before)
         audit.log("s3_write", "bucket_acl_set",
-                  f"ACL « {canned} » — {account['name']}/{bucket}",
+                  f"ACL mise à jour ({canned or 'grants personnalisés'}, "
+                  f"{len(account_grants)} accès par compte) — {account['name']}/{bucket}",
                   target=f"{account['name']}/{bucket}",
                   status="ok" if canned not in bucket_config.PUBLIC_ACLS else "fail")
         if canned in bucket_config.PUBLIC_ACLS:

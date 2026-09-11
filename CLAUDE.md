@@ -40,6 +40,32 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### ACL : accès par compte en plus de la valeur prédéfinie (v0.9.3)
+
+Le menu ACL prédéfinie (v0.9.0) ne permet pas d'accorder un accès à un compte précis — demande de
+l'utilisateur après avoir testé v0.9.2 en réel. Choix validés : garder le menu prédéfini existant
+**et** ajouter une section « Accès par compte » (grants ajoutables/supprimables en JS, comme les
+règles de lifecycle) ; identification du compte par **ID canonique S3 ou email** (sélecteur de
+type) ; les deux se combinent en un seul appel S3, pas deux réglages indépendants.
+
+- **`app/bucket_config.py`** : `apply_acl(client, bucket, owner, canned, account_grants)` remplace
+  `apply_canned_acl` — construit la liste complète de grants (owner FULL_CONTROL + grants impliqués
+  par le preset choisi + grants par compte) et appelle **une seule fois**
+  `put_bucket_acl(AccessControlPolicy=...)`, jamais `ACL=<canned>` (impossible de combiner les deux
+  sur un même appel, `ACL=` remplace toute la liste de grants). Grantee `AmazonCustomerByEmail` pour
+  l'email, `CanonicalUser` pour l'ID — énums vérifiés sur le modèle botocore de `PutBucketAcl`
+  (`Grantee.Type` : `CanonicalUser`/`AmazonCustomerByEmail`/`Group` ; `Permission` :
+  `FULL_CONTROL`/`READ`/`WRITE`/`READ_ACP`/`WRITE_ACP`).
+- **`bucket_config_routes.acl()`** : `_parse_account_grants` (même pattern que les règles de
+  lifecycle, listes parallèles `grant_identifier_type`/`grant_identifier`/`grant_permission`,
+  lignes à identifiant vide ignorées). Rejette la soumission si ni preset ni accès par compte n'est
+  fourni. Snapshot d'undo inchangé (toujours les grants bruts exacts via `get_acl`/`restore_acl`),
+  donc l'annulation défait canned + accès par compte en une fois, quel que soit ce qui a été
+  combiné.
+- **Tests** (moto, non versionné) : preset `public-read` + un accès par compte (ID canonique)
+  appliqués ensemble puis vérifiés dans les grants renvoyés par S3 ; undo qui restaure exactement
+  l'unique grant owner d'origine ; accès par compte seul (email) sans toucher au preset.
+
 ### Fix : ACL prédéfinie invalide sur PutBucketAcl (v0.9.2)
 
 Bug remonté par l'utilisateur en testant v0.9.1 en réel : `bucket-owner-read` et

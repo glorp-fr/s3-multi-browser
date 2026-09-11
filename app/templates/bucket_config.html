@@ -244,9 +244,34 @@
         </label>
         <div class="hint">⚠ <code>public-read</code> et <code>public-read-write</code> rendent le bucket
           (ou son contenu) accessible sans authentification.</div>
+
+        <fieldset>
+          <legend>Accès par compte</legend>
+          <p class="hint">Accorde une permission à un compte précis (identifiant canonique S3 ou
+            email), en plus de l'ACL prédéfinie ci-dessus.</p>
+          <div id="acl-grants"></div>
+          <button class="btn ghost sm" type="button" id="acl-grant-add">{{ macros.icon("plus") }} Ajouter un accès</button>
+        </fieldset>
+
         <button class="btn blue" type="submit">Enregistrer</button>
       </form>
       {{ undo_button("acl") }}
+
+      <template id="acl-grant-template">
+        <div class="acl-grant-row">
+          <select name="grant_identifier_type">
+            <option value="id">ID canonique</option>
+            <option value="email">Email</option>
+          </select>
+          <input type="text" name="grant_identifier" class="mono" placeholder="identifiant du compte" required>
+          <select name="grant_permission">
+            {% for p in grant_permissions %}
+            <option value="{{ p }}">{{ p }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn red sm" type="button" data-grant-remove>{{ macros.icon("trash") }} Retirer</button>
+        </div>
+      </template>
     </div>
     <div class="split-current">
       <h3 class="split-heading">Version actuelle</h3>
@@ -318,6 +343,20 @@
     aclCopy.addEventListener("click", function () {
       var value = aclCopy.getAttribute("data-value");
       if (value) { document.getElementById("acl-select").value = value; }
+    });
+  }
+
+  var grantList = document.getElementById("acl-grants");
+  var grantTemplate = document.getElementById("acl-grant-template");
+  var grantAdd = document.getElementById("acl-grant-add");
+  function bindGrantRemove(row) {
+    row.querySelector("[data-grant-remove]").addEventListener("click", function () { row.remove(); });
+  }
+  if (grantList) {
+    grantAdd.addEventListener("click", function () {
+      var clone = grantTemplate.content.firstElementChild.cloneNode(true);
+      grantList.appendChild(clone);
+      bindGrantRemove(clone);
     });
   }
 })();
