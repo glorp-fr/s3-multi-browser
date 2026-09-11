@@ -40,6 +40,18 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Fix : le formulaire de création de bucket restait visible malgré `hidden` (v0.9.4)
+
+Remonté par l'utilisateur en testant v0.9.1+ en réel : le formulaire dépliable de création de
+bucket (v0.9.1) s'affichait en permanence au lieu de rester caché avant clic sur « Créer un
+bucket ». Cause : `<form class="form-card" ... hidden>` — `.form-card` pose `display: flex` sur
+l'élément qui porte aussi l'attribut `hidden`. Un style **auteur** l'emporte toujours sur le style
+**agent utilisateur** par défaut du navigateur (qui pose `display: none` pour `[hidden]`), quelle
+que soit la spécificité — donc `display: flex` gagnait et le `hidden` natif était neutralisé.
+Fix générique plutôt que ponctuel : `[hidden] { display: none !important; }` ajouté tout en haut
+de `style.css`, qui protège cet endroit précis **et** tout futur cas où un élément caché porterait
+par ailleurs une classe posant un `display` explicite.
+
 ### ACL : accès par compte en plus de la valeur prédéfinie (v0.9.3)
 
 Le menu ACL prédéfinie (v0.9.0) ne permet pas d'accorder un accès à un compte précis — demande de
