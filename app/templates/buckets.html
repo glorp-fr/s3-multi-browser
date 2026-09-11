@@ -18,10 +18,91 @@
 </div>
 
 {% if 'bucket_admin' in perms %}
-<form class="inline-form" method="post" action="{{ url_for('explorer.bucket_new', account_id=account.id) }}">
-  <input type="text" name="name" placeholder="nom-du-bucket" required pattern="[a-z0-9.\-]{3,63}">
-  <button class="btn blue sm" type="submit">{{ macros.icon("plus") }} Créer un bucket</button>
+<button class="btn blue sm" type="button" id="bucket-new-toggle">{{ macros.icon("plus") }} Créer un bucket</button>
+
+<form class="form-card" method="post" id="bucket-new-form" hidden
+      action="{{ url_for('explorer.bucket_new', account_id=account.id) }}">
+  <label>Nom du bucket
+    <input type="text" name="name" class="mono" placeholder="nom-du-bucket" required pattern="[a-z0-9.\-]{3,63}">
+  </label>
+
+  <label class="checkbox-row">
+    <input type="checkbox" name="versioning" id="new-versioning" value="1">
+    Activer le versionning
+  </label>
+
+  <label class="checkbox-row">
+    <input type="checkbox" name="lock" id="new-lock" value="1">
+    Activer le verrouillage (Object Lock)
+  </label>
+  <p class="hint" id="new-lock-hint" hidden>
+    Le verrouillage ne peut être activé qu'à la création du bucket — impossible de l'ajouter après
+    coup. Il active automatiquement le versionning (requis par S3).
+  </p>
+  <fieldset id="new-lock-fields" hidden>
+    <legend>Rétention par défaut (optionnel)</legend>
+    <label class="checkbox-row">
+      <input type="checkbox" name="lock_rule_enabled" id="new-lock-rule-enabled" value="1">
+      Définir une rétention par défaut
+    </label>
+    <div id="new-lock-rule-details" hidden>
+      <label class="checkbox-row">
+        <input type="radio" name="lock_mode" value="GOVERNANCE" checked> Gouvernance
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="lock_mode" value="COMPLIANCE"> Conformité
+      </label>
+      <label>Durée
+        <input type="number" name="lock_value" min="1" value="1" style="width:6em">
+      </label>
+      <label class="checkbox-row"><input type="radio" name="lock_unit" value="days" checked> Jours</label>
+      <label class="checkbox-row"><input type="radio" name="lock_unit" value="years"> Années</label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Règle de lifecycle (optionnel)</legend>
+    <label class="checkbox-row">
+      <input type="checkbox" name="lifecycle_enabled" id="new-lifecycle-enabled" value="1">
+      Ajouter une règle
+    </label>
+    <div id="new-lifecycle-fields" hidden>
+      <label>Préfixe <span class="hint">(vide = tout le bucket)</span>
+        <input type="text" name="lifecycle_prefix" class="mono">
+      </label>
+      <label>Expiration des objets <span class="hint">(jours, vide = désactivé)</span>
+        <input type="number" name="lifecycle_expiration_days" min="1" style="width:7em">
+      </label>
+    </div>
+  </fieldset>
+
+  <button class="btn blue" type="submit">{{ macros.icon("plus") }} Créer le bucket</button>
 </form>
+
+<script>
+(function () {
+  var toggle = document.getElementById("bucket-new-toggle");
+  var form = document.getElementById("bucket-new-form");
+  if (toggle) {
+    toggle.addEventListener("click", function () { form.hidden = !form.hidden; });
+  }
+  var lock = document.getElementById("new-lock");
+  var versioning = document.getElementById("new-versioning");
+  function syncLock() {
+    document.getElementById("new-lock-hint").hidden = !lock.checked;
+    document.getElementById("new-lock-fields").hidden = !lock.checked;
+    if (lock.checked) { versioning.checked = true; versioning.disabled = true; }
+    else { versioning.disabled = false; }
+  }
+  lock.addEventListener("change", syncLock);
+  document.getElementById("new-lock-rule-enabled").addEventListener("change", function () {
+    document.getElementById("new-lock-rule-details").hidden = !this.checked;
+  });
+  document.getElementById("new-lifecycle-enabled").addEventListener("change", function () {
+    document.getElementById("new-lifecycle-fields").hidden = !this.checked;
+  });
+})();
+</script>
 {% endif %}
 
 <form method="post" action="{{ url_for('explorer.bucket_bulk', account_id=account.id) }}" data-bulk>

@@ -32,6 +32,11 @@ chiffré côté serveur.
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
+- **Création de bucket** : formulaire dépliable (case « Versionning », case « Object Lock » — avec
+  rétention par défaut optionnelle — et une règle de lifecycle optionnelle), pour poser ces réglages
+  dès la création plutôt que de revenir ensuite dans *Configurer*. Cocher Object Lock active
+  automatiquement le versionning (imposé par S3) ; c'est le seul réglage qui **ne peut pas** être
+  ajouté après coup, contrairement aux autres.
 - **Configuration de bucket** (bouton *Configurer*, droit `bucket_admin`) : édition graphique
   (cases à cocher / champs, pas de JSON à écrire à la main sauf pour la policy) de 5 réglages S3,
   chacun affichant son état actuel et annulable indépendamment (un niveau d'undo, état restauré
@@ -41,9 +46,13 @@ chiffré côté serveur.
     été créé avec le verrouillage activé (non activable après coup, limitation S3) ;
   - **Lifecycle** : règles ajoutables/supprimables (préfixe, expiration des objets, expiration
     des versions précédentes, nettoyage des uploads multipart incomplets) ;
-  - **Bucket policy** : éditeur JSON IAM brut, avec suppression ;
-  - **ACL** : ACL prédéfinie (`private`, `public-read`, …) avec avertissement + confirmation avant
-    tout accès public, grants actuels affichés en lecture seule.
+  - **Bucket policy** et **ACL** : présentées en deux colonnes — la version actuelle en lecture à
+    droite, le formulaire d'édition à gauche, avec un bouton **Copier la version actuelle** qui
+    préremplit la nouvelle valeur à partir de l'actuelle (pour l'ACL, seulement si l'actuelle
+    correspond à une valeur prédéfinie reconnue — sinon le bouton est désactivé, l'ACL courante
+    étant des grants personnalisés non représentables tels quels). Policy en éditeur JSON IAM brut ;
+    ACL limitée aux valeurs prédéfinies (`private`, `public-read`, …) avec confirmation avant tout
+    accès public.
 - **Synchronisation entre buckets** (`/sync`) : jobs planifiés de copie objet / préfixe / bucket
   entier vers un autre bucket, **cross-compte et cross-provider** (les objets transitent par le
   serveur en flux, jamais bufferisés). Suppression des objets absents de la source **optionnelle**

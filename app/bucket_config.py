@@ -174,6 +174,33 @@ def get_acl(client, bucket):
     return {"owner": owner, "grants": grants}
 
 
+_ALL_USERS_URI = "http://acs.amazonaws.com/groups/global/AllUsers"
+_AUTH_USERS_URI = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+
+
+def detect_canned_acl(snapshot):
+    """Best-effort match of a get_acl() snapshot against a canned ACL name — None if the
+    current grants are custom (e.g. cross-account grants) and not representable as one of
+    the predefined values. Only the four canned ACLs expressible purely from owner + the
+    standard groups are considered; bucket-owner-read/-full-control need cross-account
+    context we don't have here and are never detected."""
+    owner_id = (snapshot.get("owner") or {}).get("ID")
+    non_owner = {
+        (g.get("uri"), g["permission"]) for g in snapshot.get("grants", [])
+        if not (g.get("type") == "CanonicalUser" and g.get("id") == owner_id
+                and g["permission"] == "FULL_CONTROL")
+    }
+    if not non_owner:
+        return "private"
+    if non_owner == {(_ALL_USERS_URI, "READ")}:
+        return "public-read"
+    if non_owner == {(_ALL_USERS_URI, "READ"), (_ALL_USERS_URI, "WRITE")}:
+        return "public-read-write"
+    if non_owner == {(_AUTH_USERS_URI, "READ")}:
+        return "authenticated-read"
+    return None
+
+
 def apply_canned_acl(client, bucket, canned):
     if canned not in CANNED_ACLS:
         raise ValueError("ACL prédéfinie invalide")

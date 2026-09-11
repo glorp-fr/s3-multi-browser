@@ -71,11 +71,12 @@ def config(account_id, bucket):
             policy_pretty = state["policy"]
 
     snapshots = {s: _snapshot(account_id, bucket, s) for s in SECTIONS}
+    acl_detected = bucket_config.detect_canned_acl(state["acl"]) if state.get("acl") else None
 
     return render_template(
         "bucket_config.html", account=account, bucket=bucket, state=state, errors=errors,
         policy_pretty=policy_pretty, snapshots=snapshots, canned_acls=bucket_config.CANNED_ACLS,
-        public_acls=bucket_config.PUBLIC_ACLS,
+        public_acls=bucket_config.PUBLIC_ACLS, acl_detected=acl_detected,
     )
 
 

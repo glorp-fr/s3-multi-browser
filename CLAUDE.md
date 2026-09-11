@@ -40,6 +40,45 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Options à la création de bucket + policy/ACL en deux colonnes + sidebar (v0.9.1)
+
+Suite directe de la v0.9.0, choix validés avec l'utilisateur avant implémentation : le formulaire
+de création de bucket bascule en formulaire dépliable (case à cocher) proposant versionning,
+verrouillage et une règle de lifecycle dès la création — plutôt que de forcer un aller-retour par
+*Configurer* juste après. Et pour policy/ACL, remplacement de l'affichage empilé par une mise en
+page à deux colonnes (actuelle en lecture à droite, édition à gauche) avec bouton **Copier la
+version actuelle**.
+
+- **`app/routes/explorer_routes.py`** (`bucket_new`) : `lock` cochée ⇒
+  `create_bucket(..., ObjectLockEnabledForBucket=True)` (le seul réglage qui ne peut être posé
+  qu'à la création, S3 ne permet pas de l'ajouter après coup) et active automatiquement le
+  versionning (imposé par S3 sur un bucket avec Object Lock — géré aussi côté JS : la case
+  versionning se coche et se désactive quand on coche verrouillage). Rétention par défaut et règle
+  de lifecycle appliquées après la création via les mêmes `bucket_config.set_*` que la page
+  Configurer ; un échec sur l'une de ces étapes est signalé par un flash mais n'annule pas la
+  création (le bucket existe déjà, l'admin corrige via Configurer).
+- **`app/bucket_config.py`** : `detect_canned_acl(snapshot)` — reconnaissance best-effort d'une ACL
+  prédéfinie à partir des grants bruts (`private`/`public-read`/`public-read-write`/
+  `authenticated-read`, en excluant le grant FULL_CONTROL implicite du propriétaire) ; renvoie
+  `None` si les grants sont personnalisés (cross-account, etc.) — le bouton « Copier » de l'onglet
+  ACL est alors désactivé, avec l'ACL actuelle affichée à droite pour référence mais non copiable
+  telle quelle dans le menu déroulant prédéfini de gauche.
+- **`bucket_config.html`** : nouvelle classe `.split-view` (deux colonnes, `flex-wrap` pour rester
+  utilisable en dessous de ~800px) réutilisée pour les onglets Policy et ACL uniquement (les 3
+  autres onglets gardent l'affichage empilé existant, qui montre déjà l'état courant juste au-dessus
+  du formulaire). Bouton « Copier » : JS pur, recopie le `<pre>` de droite (policy) ou pré-sélectionne
+  la valeur détectée (ACL) — aucun aller-retour serveur.
+- **`buckets.html`** : le simple champ nom devient un bouton qui déplie un `form-card` (nom +
+  versionning + lock [+ rétention par défaut optionnelle] + une règle de lifecycle optionnelle).
+- **`base.html` / `style.css`** : `.sidebar` passe en `display:flex; flex-direction:column` avec un
+  `.sidebar-spacer` (`flex:1`) inséré entre les liens Comptes/Synchronisation et le bloc
+  Administration, qui se retrouve ainsi collé en bas de la fenêtre (juste au-dessus du pied de
+  version) au lieu de s'empiler juste après Synchronisation.
+- **Tests** (script client Flask + `moto`, non versionné, même méthode que v0.8.x/v0.9.0) : création
+  combinant versionning+lock+lifecycle en un seul POST, création « plaine » sans aucune case, et
+  `detect_canned_acl` sur bucket neuf (private), après `public-read`, et sur des grants personnalisés
+  (WRITE seul sans READ ⇒ non détecté).
+
 ### Éditeur graphique de configuration de bucket — versionning, lock, lifecycle, policy, ACL (v0.9.0)
 
 Nouveau bouton **Configurer** sur chaque bucket (droit `bucket_admin`, réutilisé — pas de nouveau

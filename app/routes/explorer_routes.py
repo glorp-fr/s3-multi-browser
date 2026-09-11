@@ -8,7 +8,7 @@ from flask import (
     request, send_file, url_for,
 )
 
-from .. import audit, storage, sync, usage_cache
+from .. import audit, bucket_config, storage, sync, usage_cache
 from ..auth import (
     accessible_accounts, account_permissions, accounts_with_permission,
     can, can_access_account, login_required,
@@ -128,9 +128,34 @@ def bucket_new(account_id):
     if not name:
         flash("Nom de bucket requis", "error")
         return redirect(url_for("explorer.buckets", account_id=account_id))
+
+    lock_enabled = bool(request.form.get("lock"))
+    # S3 requires versioning on an Object-Lock bucket — enabled regardless of the checkbox.
+    versioning_enabled = lock_enabled or bool(request.form.get("versioning"))
+
+    lock_rule = None
+    if lock_enabled and request.form.get("lock_rule_enabled"):
+        value = request.form.get("lock_value", "").strip()
+        if value.isdigit() and int(value) > 0:
+            unit = "days" if request.form.get("lock_unit", "days") == "days" else "years"
+            lock_rule = {"mode": request.form.get("lock_mode", "GOVERNANCE"), unit: int(value)}
+
+    lifecycle_rule = None
+    if request.form.get("lifecycle_enabled"):
+        exp = request.form.get("lifecycle_expiration_days", "").strip()
+        if exp.isdigit() and int(exp) > 0:
+            lifecycle_rule = {
+                "id": "", "prefix": request.form.get("lifecycle_prefix", "").strip(),
+                "enabled": True, "expiration_days": int(exp),
+                "noncurrent_expiration_days": None, "abort_incomplete_multipart_days": None,
+            }
+
     client = get_client(account)
     try:
-        client.create_bucket(Bucket=name)
+        create_kwargs = {"Bucket": name}
+        if lock_enabled:
+            create_kwargs["ObjectLockEnabledForBucket"] = True
+        client.create_bucket(**create_kwargs)
         flash(f"Bucket « {name} » créé", "success")
         audit.log("s3_write", "create_bucket",
                   f"Bucket « {name} » créé — compte « {account['name']} »",
@@ -140,6 +165,24 @@ def bucket_new(account_id):
         audit.log("s3_write", "create_bucket",
                   f"Échec création bucket « {name} » — compte « {account['name']} » : {exc}",
                   target=f"{account['name']}/{name}", status="fail")
+        return redirect(url_for("explorer.buckets", account_id=account_id))
+
+    if versioning_enabled:
+        try:
+            bucket_config.set_versioning(client, name, "Enabled")
+        except ClientError as exc:
+            flash(f"Bucket créé, mais le versionning n'a pas pu être activé : {exc}", "error")
+    if lock_rule:
+        try:
+            bucket_config.set_object_lock_rule(client, name, lock_rule)
+        except ClientError as exc:
+            flash(f"Bucket créé, mais la rétention par défaut n'a pas pu être appliquée : {exc}", "error")
+    if lifecycle_rule:
+        try:
+            bucket_config.set_lifecycle(client, name, [lifecycle_rule])
+        except ClientError as exc:
+            flash(f"Bucket créé, mais la règle de lifecycle n'a pas pu être appliquée : {exc}", "error")
+
     return redirect(url_for("explorer.buckets", account_id=account_id))
 
 

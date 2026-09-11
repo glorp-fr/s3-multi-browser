@@ -177,24 +177,37 @@
   {% if errors.policy %}
     <p class="hint">Erreur de lecture : {{ errors.policy }}</p>
   {% else %}
-  <p class="hint">
-    {% if state.policy %}Une bucket policy est actuellement définie.{% else %}Aucune bucket policy définie.{% endif %}
-  </p>
-  <form class="form-card" method="post"
-        action="{{ url_for('bucket_config.policy', account_id=account.id, bucket=bucket) }}">
-    <label>Policy (JSON IAM)
-      <textarea name="policy" class="mono" rows="14" spellcheck="false"
-                placeholder='{&#10;  "Version": "2012-10-17",&#10;  "Statement": []&#10;}'>{{ policy_pretty or "" }}</textarea>
-    </label>
-    <div class="row-actions">
-      <button class="btn blue" type="submit" name="action" value="save">Enregistrer</button>
+  <div class="split-view">
+    <div class="split-edit">
+      <form class="form-card" method="post" id="policy-form"
+            action="{{ url_for('bucket_config.policy', account_id=account.id, bucket=bucket) }}">
+        <div class="row-actions">
+          <button class="btn ghost sm" type="button" id="policy-copy">{{ macros.icon("copy") }} Copier la version actuelle</button>
+        </div>
+        <label>Nouvelle policy (JSON IAM)
+          <textarea name="policy" id="policy-input" class="mono" rows="16" spellcheck="false"
+                    placeholder='{&#10;  "Version": "2012-10-17",&#10;  "Statement": []&#10;}'></textarea>
+        </label>
+        <div class="row-actions">
+          <button class="btn blue" type="submit" name="action" value="save">Enregistrer</button>
+          {% if state.policy %}
+          <button class="btn red" type="submit" name="action" value="delete"
+                  onclick="return confirm('Supprimer la bucket policy ?');">Supprimer la policy</button>
+          {% endif %}
+        </div>
+      </form>
+      {{ undo_button("policy") }}
+    </div>
+    <div class="split-current">
+      <h3 class="split-heading">Version actuelle</h3>
       {% if state.policy %}
-      <button class="btn red" type="submit" name="action" value="delete"
-              onclick="return confirm('Supprimer la bucket policy ?');">Supprimer la policy</button>
+      <pre class="mono split-readonly" id="policy-current">{{ policy_pretty }}</pre>
+      {% else %}
+      <p class="hint">Aucune bucket policy définie.</p>
+      <pre class="mono split-readonly" id="policy-current" hidden></pre>
       {% endif %}
     </div>
-  </form>
-  {{ undo_button("policy") }}
+  </div>
   {% endif %}
 </section>
 
@@ -203,39 +216,58 @@
   {% if errors.acl %}
     <p class="hint">Erreur de lecture : {{ errors.acl }}</p>
   {% else %}
-  <p class="hint">Propriétaire : <span class="mono">{{ state.acl.owner.DisplayName or state.acl.owner.ID or "—" }}</span></p>
-  <table class="tbl">
-    <thead><tr><th>Bénéficiaire</th><th>Permission</th></tr></thead>
-    <tbody>
-    {% for g in state.acl.grants %}
-      <tr>
-        <td class="mono">
-          {% if g.type == "Group" %}{{ g.uri }}{% else %}{{ g.display_name or g.id }}{% endif %}
-        </td>
-        <td>{{ g.permission }}</td>
-      </tr>
-    {% else %}
-      <tr><td colspan="2" class="hint">Aucun grant</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-
-  <form class="form-card" method="post" style="margin-top:14px"
-        action="{{ url_for('bucket_config.acl', account_id=account.id, bucket=bucket) }}"
-        onsubmit="var v=this.canned.value; if (['public-read','public-read-write'].includes(v)) { return confirm('Cette ACL rend le bucket accessible publiquement. Confirmer ?'); }">
-    <label>Nouvelle ACL prédéfinie
-      <select name="canned">
-        <option value="">— ne pas modifier —</option>
-        {% for c in canned_acls %}
-        <option value="{{ c }}">{{ c }}{{ " ⚠ accès public" if c in public_acls else "" }}</option>
+  <div class="split-view">
+    <div class="split-edit">
+      <form class="form-card" method="post" id="acl-form"
+            action="{{ url_for('bucket_config.acl', account_id=account.id, bucket=bucket) }}"
+            onsubmit="var v=this.canned.value; if (['public-read','public-read-write'].includes(v)) { return confirm('Cette ACL rend le bucket accessible publiquement. Confirmer ?'); }">
+        <div class="row-actions">
+          <button class="btn ghost sm" type="button" id="acl-copy"
+                  {{ "disabled" if not acl_detected else "" }}
+                  title="{{ 'Copier l\'ACL prédéfinie actuelle' if acl_detected else 'ACL actuelle personnalisée (grants bruts) — non représentable par une valeur prédéfinie' }}"
+                  data-value="{{ acl_detected or '' }}">
+            {{ macros.icon("copy") }} Copier la version actuelle
+          </button>
+        </div>
+        {% if not acl_detected %}
+        <p class="hint">L'ACL actuelle ne correspond à aucune valeur prédéfinie (grants
+          personnalisés) — elle ne peut pas être copiée telle quelle, choisis une nouvelle
+          valeur ci-dessous.</p>
+        {% endif %}
+        <label>Nouvelle ACL prédéfinie
+          <select name="canned" id="acl-select">
+            <option value="">— ne pas modifier —</option>
+            {% for c in canned_acls %}
+            <option value="{{ c }}">{{ c }}{{ " ⚠ accès public" if c in public_acls else "" }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="hint">⚠ <code>public-read</code> et <code>public-read-write</code> rendent le bucket
+          (ou son contenu) accessible sans authentification.</div>
+        <button class="btn blue" type="submit">Enregistrer</button>
+      </form>
+      {{ undo_button("acl") }}
+    </div>
+    <div class="split-current">
+      <h3 class="split-heading">Version actuelle</h3>
+      <p class="hint">Propriétaire : <span class="mono">{{ state.acl.owner.DisplayName or state.acl.owner.ID or "—" }}</span></p>
+      <table class="tbl">
+        <thead><tr><th>Bénéficiaire</th><th>Permission</th></tr></thead>
+        <tbody>
+        {% for g in state.acl.grants %}
+          <tr>
+            <td class="mono">
+              {% if g.type == "Group" %}{{ g.uri }}{% else %}{{ g.display_name or g.id }}{% endif %}
+            </td>
+            <td>{{ g.permission }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="2" class="hint">Aucun grant</td></tr>
         {% endfor %}
-      </select>
-    </label>
-    <div class="hint">⚠ <code>public-read</code> et <code>public-read-write</code> rendent le bucket
-      (ou son contenu) accessible sans authentification.</div>
-    <button class="btn blue" type="submit">Enregistrer</button>
-  </form>
-  {{ undo_button("acl") }}
+        </tbody>
+      </table>
+    </div>
+  </div>
   {% endif %}
 </section>
 
@@ -270,6 +302,22 @@
       var clone = lcTemplate.content.firstElementChild.cloneNode(true);
       lcRules.appendChild(clone);
       bindRemove(clone);
+    });
+  }
+
+  var policyCopy = document.getElementById("policy-copy");
+  if (policyCopy) {
+    policyCopy.addEventListener("click", function () {
+      var current = document.getElementById("policy-current");
+      document.getElementById("policy-input").value = current ? current.textContent : "";
+    });
+  }
+
+  var aclCopy = document.getElementById("acl-copy");
+  if (aclCopy) {
+    aclCopy.addEventListener("click", function () {
+      var value = aclCopy.getAttribute("data-value");
+      if (value) { document.getElementById("acl-select").value = value; }
     });
   }
 })();

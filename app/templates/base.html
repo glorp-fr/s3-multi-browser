@@ -25,6 +25,7 @@
   <nav class="sidebar">
     <a class="navlink" href="{{ url_for('explorer.accounts') }}">{{ macros.icon("box") }} Comptes</a>
     <a class="navlink" href="{{ url_for('sync.dashboard') }}">{{ macros.icon("repeat") }} Synchronisation</a>
+    <div class="sidebar-spacer"></div>
     {% if current_user.is_admin %}
     <div class="nav-sep">Administration</div>
     <a class="navlink" href="{{ url_for('admin.providers') }}">{{ macros.icon("globe") }} Providers</a>
