@@ -24,6 +24,7 @@
 <div class="shell">
   <nav class="sidebar">
     <a class="navlink" href="{{ url_for('explorer.accounts') }}">{{ macros.icon("box") }} Comptes</a>
+    <a class="navlink" href="{{ url_for('sync.dashboard') }}">{{ macros.icon("repeat") }} Synchronisation</a>
     {% if current_user.is_admin %}
     <div class="nav-sep">Administration</div>
     <a class="navlink" href="{{ url_for('admin.providers') }}">{{ macros.icon("globe") }} Providers</a>
@@ -32,6 +33,7 @@
     <a class="navlink" href="{{ url_for('admin.users') }}">{{ macros.icon("key") }} Utilisateurs</a>
     <a class="navlink" href="{{ url_for('admin.logs') }}">{{ macros.icon("activity") }} Logs</a>
     <a class="navlink" href="{{ url_for('admin.backup_page') }}">{{ macros.icon("save") }} Sauvegarde</a>
+    <a class="navlink" href="{{ url_for('admin.sync_jobs') }}">{{ macros.icon("repeat") }} Synchronisation</a>
     <a class="navlink" href="{{ url_for('admin.version_page') }}">{{ macros.icon("tag") }} Version{% if update_available %} <span class="upd-dot" title="Mise à jour disponible">●</span>{% endif %}</a>
     {% endif %}
     <div class="sidebar-foot">

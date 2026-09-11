@@ -40,6 +40,71 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Synchronisation planifiée entre buckets + copie inter-bucket — v0.8.0
+
+Deux fonctionnalités livrées ensemble car elles partagent le même moteur : (1) planifier une
+synchronisation entre deux buckets (objet / préfixe / bucket entier) et (2) copier un préfixe ou
+des objets vers un autre bucket depuis l'explorateur. Choix validés avec l'utilisateur avant
+implémentation :
+
+- **Cross-compte / cross-provider** : source et destination peuvent être sur des comptes (et
+  providers) différents. Pas de `CopyObject` S3 natif entre deux endpoints différents → les objets
+  **transitent par le serveur** (`get_object` puis `upload_fileobj`, streamé, jamais bufferisé en
+  RAM — contrairement au zip du téléchargement groupé existant).
+- **Suppression à destination configurable par job** (case « supprimer les objets absents de la
+  source », **décochée par défaut**) — pas un miroir strict imposé.
+- **Pas admin-only** : tout utilisateur ayant `download` sur un compte et `upload` sur un autre
+  (via ses groupes) peut créer ses propres jobs. Chaque user ne voit/gère que ses jobs sur
+  `/sync` ; **Administration → Synchronisation** (`/admin/sync`) offre une vue globale
+  (superviser, désactiver, reprendre à son nom) sans éditer le contenu du job d'un autre.
+- **Droits revérifiés à chaque exécution planifiée**, pas seulement à la création : si l'owner a
+  perdu `download` (source), `upload` (destination) ou `delete` (destination, si suppression
+  activée), le job passe automatiquement `enabled=false` / `status.state="rights_error"` (visible
+  dans les deux vues), sans notification (l'app n'a pas ce canal). Un admin le débloque en le
+  « reprenant » à son nom (`reassign_sync_job` — un admin a tous les droits par construction, la
+  reprise lève donc systématiquement le blocage) ; le propriétaire peut aussi le corriger en le
+  modifiant (ré-active le job).
+- **Copie manuelle (explorateur) = tâche de fond**, pas une requête HTTP bloquante : le bulk
+  « Copier vers… » crée un job one-shot (`schedule.enabled=false`, portée `selection` = liste de
+  clés déjà dépliée comme le zip existant) lancé dans un thread, suivi sur `/sync` (barre de
+  progression, polling JSON toutes les 3 s). Un objet identique à destination (taille + ETag) est
+  **ignoré**, pas réécrit.
+
+Détails d'implémentation :
+
+- **`storage.py`** : collection `sync_jobs` (`{id, owner_id, name, source{account_id, bucket,
+  scope: object|prefix|bucket|selection, value, keys}, dest{account_id, bucket, prefix},
+  delete_extraneous, schedule{enabled, frequency, weekday, hour, minute}, enabled, status{state,
+  last_run_at, last_summary}, created_at}`). CRUD + `set_sync_job_enabled`, `reassign_sync_job`,
+  `record_sync_job_result`. Un job édité par son propriétaire redevient `enabled=true` (efface un
+  ancien `rights_error`).
+- **`app/sync.py`** (nouveau, même esprit que `backup.py`) : moteur de transfert
+  (`_resolve_keys` selon la portée, comparaison taille+ETag pour sauter les objets déjà à jour,
+  `_delete_extraneous` par lot de 1000 comme le bulk delete existant, jamais d'exception non
+  gérée) + planificateur généralisé à **N jobs** (un `threading.Timer` par job, au lieu du timer
+  unique de `backup.py`) + verrou anti-chevauchement **par job**. Progression tenue **en mémoire
+  uniquement** (`_progress`, jamais persistée — perdue au redémarrage comme le timer de backup,
+  sans conséquence). **Mono-worker gunicorn requis** (comme la sauvegarde).
+- **`auth.py`** : `accounts_with_permission(user, perm)` — comptes accessibles sur lesquels
+  l'utilisateur tient un droit donné (peuple les `<select>` source/destination).
+- **Routes** : `app/routes/sync_routes.py` (nouveau blueprint `/sync` — dashboard scoped owner,
+  CRUD job, `/run`, `/status` JSON pour le polling). `admin_routes.py` : `/admin/sync` (+
+  `/toggle`, `/reassign`). `explorer_routes.py` : `object_bulk` gagne l'action `copy` (compte /
+  bucket / préfixe destination saisis dans la barre d'actions groupées existante).
+- **Templates** : `sync_jobs.html` (dashboard + badges d'état + barre de progression + polling
+  JS), `sync_job_form.html` (création/édition, JS bascule portée/planification comme
+  `admin_backup.html`), `admin_sync.html` (vue globale). `explorer.html` : bloc « Copier vers… »
+  dans la barre bulk existante. Icônes `repeat` / `copy` ajoutées à `_macros.html`. CSS
+  `.sync-progress(-bar)`.
+- Un job né d'une copie manuelle (portée `selection`, liste de clés figée) n'est **pas éditable**
+  (`job_edit` redirige avec un message) — seulement lançable/supprimable.
+- **Tests** (script client Flask + `moto` mocké, non versionné) : sync par préfixe (copie,
+  idempotence sur ré-exécution, miroir avec suppression après ajout/retrait côté source), copie
+  manuelle bulk depuis l'explorateur (job `selection` créé + exécuté en tâche de fond, contenu
+  vérifié), rendu des pages (dashboard, formulaire, admin), perte de droits → désactivation
+  automatique, reprise admin → déblocage + ré-exécution OK, arithmétique du planificateur
+  (quotidien → lendemain 03:00 UTC).
+
 ### Diffusion par image GHCR + mise à jour en mode conteneur
 
 Choix validés avec l'utilisateur : cible = **auto-hébergeurs externes** (image publique GHCR comme
@@ -411,15 +476,19 @@ app/
   version.py           # VERSION + git_info(), check_update() (API GitHub), apply_update() (git ff + SIGHUP)
   s3client.py           # boto3 client, endpoint = provider.endpoint_template.format(region=...)
   auth.py                # session, login_required, role_required, can_write, accessible_accounts
+  sync.py                 # moteur de transfert + planificateur des jobs de synchro/copie inter-bucket
   routes/
     auth_routes.py       # /login /logout  (+ audit auth)
     admin_routes.py       # /admin/providers, /admin/accounts, /admin/users (CRUD, audités)
                           #   + /admin/logs (+ /logs/tail), /admin/version (+ /version/check, /version/update)
+                          #   + /admin/sync (vue globale des jobs : toggle, reassign)
     explorer_routes.py     # /accounts, buckets, objets, upload/download/delete, usage/refresh (audités)
-                          #   + bucket_bulk / object_bulk (actions groupées : refresh, delete, zip)
+                          #   + bucket_bulk / object_bulk (actions groupées : refresh, delete, zip, copy)
+    sync_routes.py          # /sync (dashboard scoped owner, CRUD job, run, status JSON pour polling)
   templates/             # Jinja2, un template par page + _macros.html (icônes SVG inline)
                           #   admin_logs.html (journal live + connexions), admin_version.html
-  static/style.css        # CSS transcrit de ~/claude/CHARTE_GRAPHIQUE.md (+ styles .log-view / .tabs / .ver-* / .bulk-bar)
+                          #   sync_jobs.html / sync_job_form.html / admin_sync.html
+  static/style.css        # CSS transcrit de ~/claude/CHARTE_GRAPHIQUE.md (+ styles .log-view / .tabs / .ver-* / .bulk-bar / .sync-progress)
   static/bulk.js          # multi-sélection des tableaux <form data-bulk> (vanilla)
 VERSION                 # numéro de version semver, affiché dans l'UI, COPY dans l'image Docker
 data/                   # gitignored — db.json (chiffré), usage_cache.json, audit.jsonl(.1), version_check.json

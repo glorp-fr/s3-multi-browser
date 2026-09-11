@@ -1,7 +1,8 @@
 from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, url_for
 
-from .. import audit, backup, storage, version
+from .. import audit, backup, storage, sync, version
 from ..auth import PERMISSIONS, admin_required
+from .sync_routes import job_view as _sync_job_view
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -102,6 +103,54 @@ def backup_run():
     result = backup.run_backup(actor=g.user["username"])
     flash(result["message"], "success" if result["ok"] else "error")
     return redirect(url_for("admin.backup_page"))
+
+
+# --- Synchronisation (vue globale) ------------------------------------------
+# Chaque utilisateur gère ses propres jobs sur /sync ; cette page admin ne fait que
+# superviser : désactiver un job qui déraille, ou le reprendre à son nom (un admin a
+# toujours tous les droits, donc la reprise lève systématiquement un blocage de droits).
+
+@bp.route("/sync")
+@admin_required
+def sync_jobs():
+    jobs = [_sync_job_view(j) for j in storage.get_sync_jobs()]
+    return render_template("admin_sync.html", jobs=jobs)
+
+
+@bp.route("/sync/<job_id>/toggle", methods=["POST"])
+@admin_required
+def sync_job_toggle(job_id):
+    job = storage.get_sync_job_by_id(job_id)
+    if not job:
+        flash("Job introuvable", "error")
+        return redirect(url_for("admin.sync_jobs"))
+    new_enabled = not job["enabled"]
+    storage.set_sync_job_enabled(job_id, new_enabled, state="idle" if new_enabled else job["status"]["state"])
+    sync.reschedule(job_id) if new_enabled else sync.cancel(job_id)
+    audit.log("admin", "sync_job_toggle",
+              f"Job « {job['name']} » {'réactivé' if new_enabled else 'désactivé'} par un admin",
+              target=job["name"])
+    flash(f"Job {'réactivé' if new_enabled else 'désactivé'}", "success")
+    return redirect(url_for("admin.sync_jobs"))
+
+
+@bp.route("/sync/<job_id>/reassign", methods=["POST"])
+@admin_required
+def sync_job_reassign(job_id):
+    job = storage.get_sync_job_by_id(job_id)
+    if not job:
+        flash("Job introuvable", "error")
+        return redirect(url_for("admin.sync_jobs"))
+    try:
+        storage.reassign_sync_job(job_id, g.user["id"])
+        sync.reschedule(job_id)
+        audit.log("admin", "sync_job_reassign",
+                  f"Job « {job['name']} » repris par l'admin « {g.user['username']} »",
+                  target=job["name"])
+        flash("Job repris à votre nom — modifiez-le si besoin pour l'ajuster.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("admin.sync_jobs"))
 
 
 # --- Logs ------------------------------------------------------------------

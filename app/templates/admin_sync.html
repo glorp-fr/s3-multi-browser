@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Synchronisation — Admin{% endblock %}
+{% set STATE_BDG = {"idle": "inactif", "running": "running", "done": "success", "error": "error", "rights_error": "error"} %}
+{% set STATE_LABEL = {"idle": "inactive", "running": "en cours", "done": "ok", "error": "erreur", "rights_error": "droits insuffisants"} %}
+{% block content %}
+<h1 class="stitle">Synchronisation — tous les jobs</h1>
+<p class="hint">Chaque utilisateur crée et gère ses jobs sur sa propre page « Synchronisation ». Cette vue
+  ne sert qu'à superviser : désactiver un job qui échoue en boucle, ou le reprendre à votre nom (un admin
+  a tous les droits, la reprise lève donc systématiquement un blocage « droits insuffisants »).</p>
+
+<table class="tbl">
+  <thead><tr>
+    <th>Nom</th><th>Propriétaire</th><th>Source</th><th>Destination</th><th>Statut</th>
+    <th>Dernière exécution</th><th>Prochaine exécution</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for job in jobs %}
+  <tr>
+    <td>{{ job.name }}
+      {% if job.delete_extraneous %}<br><span class="hint">miroir (supprime à destination)</span>{% endif %}
+      {% if job.schedule_enabled %}<br><span class="hint">{{ macros.icon("repeat") }} planifié</span>{% endif %}
+    </td>
+    <td>{{ job.owner_username }}</td>
+    <td class="mono hint">{{ job.source_label }}</td>
+    <td class="mono hint">{{ job.dest_label }}</td>
+    <td><span class="bdg {{ STATE_BDG.get(job.state, "") }}">{{ STATE_LABEL.get(job.state, job.state) }}</span></td>
+    <td class="hint">
+      {% if job.last_run_at %}{{ job.last_run_at[:19] | replace("T", " ") }} UTC<br>{{ job.last_summary }}
+      {% else %}jamais{% endif %}
+    </td>
+    <td class="hint">{{ job.next_run_at or "—" }}</td>
+    <td class="row-actions">
+      <form method="post" action="{{ url_for('admin.sync_job_toggle', job_id=job.id) }}">
+        <button class="btn ghost sm" type="submit">{{ "Réactiver" if not job.enabled else "Désactiver" }}</button>
+      </form>
+      <form method="post" action="{{ url_for('admin.sync_job_reassign', job_id=job.id) }}"
+            onsubmit="return confirm('Reprendre ce job à votre nom ?');">
+        <button class="btn ghost sm" type="submit">Reprendre</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="hint">Aucun job de synchronisation</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

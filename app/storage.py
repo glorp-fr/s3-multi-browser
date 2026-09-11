@@ -94,7 +94,7 @@ def _merge_defaults(target, defaults):
 
 def _empty_db():
     return {"users": [], "accounts": [], "providers": [], "groups": [],
-            "backup": _default_backup(), "_providers_seeded": False}
+            "backup": _default_backup(), "sync_jobs": [], "_providers_seeded": False}
 
 
 def _load():
@@ -108,6 +108,7 @@ def _load():
             data = json.loads(content)
     data.setdefault("providers", [])
     data.setdefault("groups", [])
+    data.setdefault("sync_jobs", [])
     data.setdefault("_providers_seeded", False)
     _merge_defaults(data.setdefault("backup", {}), _default_backup())
     return data
@@ -556,3 +557,184 @@ def record_backup_result(*, status, error=None, archive=None):
         )
         _save(data)
         return data["backup"]
+
+
+# --- Sync jobs -------------------------------------------------------------
+# A job copies (one-shot) or synchronizes (recurring) objects from one bucket to another,
+# possibly on a different account/provider — no S3 CopyObject between endpoints, so the
+# transfer streams through the app. See app/sync.py for the transfer engine + scheduler.
+
+SYNC_SCOPES = ("object", "prefix", "bucket", "selection")  # "selection" = explicit key list
+                                                             # (explorer bulk "Copier vers…")
+
+
+def _default_sync_schedule():
+    return {"enabled": False, "frequency": "daily", "weekday": 0, "hour": 3, "minute": 0}
+
+
+def _default_sync_status():
+    return {"state": "idle", "last_run_at": None, "last_summary": None}
+
+
+def get_sync_jobs():
+    return _load()["sync_jobs"]
+
+
+def get_sync_jobs_by_owner(owner_id):
+    return [j for j in get_sync_jobs() if j["owner_id"] == owner_id]
+
+
+def get_sync_job_by_id(job_id):
+    return next((j for j in get_sync_jobs() if j["id"] == job_id), None)
+
+
+def _validate_sync_source(data, source):
+    if not get_account_by_id_in(data, source.get("account_id")):
+        raise ValueError("Compte source introuvable")
+    if not source.get("bucket", "").strip():
+        raise ValueError("Bucket source requis")
+    scope = source.get("scope")
+    if scope not in SYNC_SCOPES:
+        raise ValueError("Portée source invalide")
+    if scope in ("object", "prefix") and not (source.get("value") or "").strip():
+        raise ValueError("Clé ou préfixe source requis pour cette portée")
+
+
+def _validate_sync_dest(data, dest):
+    if not get_account_by_id_in(data, dest.get("account_id")):
+        raise ValueError("Compte destination introuvable")
+    if not dest.get("bucket", "").strip():
+        raise ValueError("Bucket destination requis")
+
+
+def get_account_by_id_in(data, account_id):
+    return next((a for a in data["accounts"] if a["id"] == account_id), None)
+
+
+def _normalize_schedule(schedule):
+    sched = dict(_default_sync_schedule())
+    sched["enabled"] = bool((schedule or {}).get("enabled"))
+    freq = (schedule or {}).get("frequency", "daily")
+    if freq not in ("daily", "weekly"):
+        raise ValueError("Fréquence invalide")
+    sched["frequency"] = freq
+    try:
+        sched["weekday"] = int((schedule or {}).get("weekday", 0))
+        sched["hour"] = int((schedule or {}).get("hour", 3))
+        sched["minute"] = int((schedule or {}).get("minute", 0))
+    except (TypeError, ValueError):
+        raise ValueError("Planification invalide")
+    if not (0 <= sched["hour"] <= 23 and 0 <= sched["minute"] <= 59):
+        raise ValueError("Horaire invalide")
+    if not 0 <= sched["weekday"] <= 6:
+        raise ValueError("Jour de la semaine invalide")
+    return sched
+
+
+def _clean_sync_source(source):
+    return {
+        "account_id": source["account_id"],
+        "bucket": source["bucket"].strip(),
+        "scope": source["scope"],
+        "value": (source.get("value") or "").strip() if source["scope"] != "bucket" else "",
+        "keys": list(source.get("keys") or []) if source["scope"] == "selection" else [],
+    }
+
+
+def _clean_sync_dest(dest):
+    prefix = (dest.get("prefix") or "").lstrip("/")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    return {"account_id": dest["account_id"], "bucket": dest["bucket"].strip(), "prefix": prefix}
+
+
+def create_sync_job(*, owner_id, name, source, dest, delete_extraneous, schedule):
+    name = (name or "").strip() or "Sans nom"
+    with _lock:
+        data = _load()
+        _validate_sync_source(data, source)
+        _validate_sync_dest(data, dest)
+        job = {
+            "id": str(uuid.uuid4()),
+            "owner_id": owner_id,
+            "name": name,
+            "source": _clean_sync_source(source),
+            "dest": _clean_sync_dest(dest),
+            "delete_extraneous": bool(delete_extraneous),
+            "schedule": _normalize_schedule(schedule),
+            "enabled": True,
+            "status": _default_sync_status(),
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        data["sync_jobs"].append(job)
+        _save(data)
+        return job
+
+
+def update_sync_job(job_id, *, name, source, dest, delete_extraneous, schedule):
+    with _lock:
+        data = _load()
+        job = next((j for j in data["sync_jobs"] if j["id"] == job_id), None)
+        if not job:
+            raise ValueError("Job de synchronisation introuvable")
+        _validate_sync_source(data, source)
+        _validate_sync_dest(data, dest)
+        job["name"] = (name or "").strip() or "Sans nom"
+        job["source"] = _clean_sync_source(source)
+        job["dest"] = _clean_sync_dest(dest)
+        job["delete_extraneous"] = bool(delete_extraneous)
+        job["schedule"] = _normalize_schedule(schedule)
+        # A job edited by its owner is trusted again (clears an earlier auto-disable).
+        job["enabled"] = True
+        if job["status"]["state"] == "rights_error":
+            job["status"]["state"] = "idle"
+        _save(data)
+        return job
+
+
+def delete_sync_job(job_id):
+    with _lock:
+        data = _load()
+        data["sync_jobs"] = [j for j in data["sync_jobs"] if j["id"] != job_id]
+        _save(data)
+
+
+def set_sync_job_enabled(job_id, enabled, *, state=None):
+    with _lock:
+        data = _load()
+        job = next((j for j in data["sync_jobs"] if j["id"] == job_id), None)
+        if not job:
+            raise ValueError("Job de synchronisation introuvable")
+        job["enabled"] = bool(enabled)
+        if state:
+            job["status"]["state"] = state
+        _save(data)
+        return job
+
+
+def reassign_sync_job(job_id, new_owner_id):
+    """Admin takeover: re-point a job at a new owner and re-enable it (used when the
+    original owner lost the rights the job needs)."""
+    with _lock:
+        data = _load()
+        job = next((j for j in data["sync_jobs"] if j["id"] == job_id), None)
+        if not job:
+            raise ValueError("Job de synchronisation introuvable")
+        job["owner_id"] = new_owner_id
+        job["enabled"] = True
+        job["status"]["state"] = "idle"
+        _save(data)
+        return job
+
+
+def record_sync_job_result(job_id, *, state, summary):
+    with _lock:
+        data = _load()
+        job = next((j for j in data["sync_jobs"] if j["id"] == job_id), None)
+        if not job:
+            return None
+        job["status"]["state"] = state
+        job["status"]["last_run_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        job["status"]["last_summary"] = summary
+        _save(data)
+        return job

@@ -2,7 +2,7 @@ import os
 
 from flask import Flask, g
 
-from . import auth, backup, storage, usage_cache, version
+from . import auth, backup, storage, sync, usage_cache, version
 
 
 def create_app():
@@ -15,6 +15,7 @@ def create_app():
     storage.migrate()
     storage.bootstrap_admin_if_empty()
     backup.start()
+    sync.start()
 
     @app.before_request
     def _load_user():
@@ -31,9 +32,11 @@ def create_app():
     from .routes.auth_routes import bp as auth_bp
     from .routes.admin_routes import bp as admin_bp
     from .routes.explorer_routes import bp as explorer_bp
+    from .routes.sync_routes import bp as sync_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(explorer_bp)
+    app.register_blueprint(sync_bp)
 
     return app

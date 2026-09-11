@@ -83,3 +83,9 @@ def accessible_accounts(user):
     for grp in groups:
         allowed.update(grp.get("account_ids") or [])
     return [a for a in accounts if a["id"] in allowed]
+
+
+def accounts_with_permission(user, permission):
+    """Accessible accounts on which `user` also holds `permission` — e.g. the accounts a
+    sync job may read from (`download`) or write to (`upload`)."""
+    return [a for a in accessible_accounts(user) if can(user, a["id"], permission)]

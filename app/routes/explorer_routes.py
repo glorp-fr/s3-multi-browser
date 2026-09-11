@@ -1,5 +1,6 @@
 import io
 import zipfile
+from datetime import datetime, timezone
 
 from botocore.exceptions import ClientError
 from flask import (
@@ -7,8 +8,11 @@ from flask import (
     request, send_file, url_for,
 )
 
-from .. import audit, storage, usage_cache
-from ..auth import accessible_accounts, account_permissions, can, can_access_account, login_required
+from .. import audit, storage, sync, usage_cache
+from ..auth import (
+    accessible_accounts, account_permissions, accounts_with_permission,
+    can, can_access_account, login_required,
+)
 from ..s3client import get_client
 
 bp = Blueprint("explorer", __name__)
@@ -324,6 +328,7 @@ def objects(account_id, bucket):
         perms=account_permissions(g.user, account_id),
         page=page, per_page=per_page, total_pages=total_pages, total_files=total_files,
         per_page_options=PER_PAGE_OPTIONS,
+        dest_accounts=accounts_with_permission(g.user, "upload"),
     )
 
 
@@ -522,6 +527,52 @@ def object_bulk(account_id, bucket):
                   target=f"{account['name']}/{bucket}/{prefix}")
         zipname = (prefix.rstrip("/").rsplit("/", 1)[-1] or bucket) + ".zip"
         return send_file(buf, as_attachment=True, download_name=zipname, mimetype="application/zip")
+
+    if action == "copy":
+        # Feature 2 (copie inter-bucket) : lance un job de sync one-shot ("selection",
+        # schedule désactivé) en tâche de fond — pas de requête HTTP bloquante sur un
+        # gros préfixe. Suivi de la progression sur /sync (page Synchronisation).
+        if not can(g.user, account_id, "download"):
+            abort(403)
+        dest_account_id = request.form.get("dest_account_id", "")
+        dest_bucket = request.form.get("dest_bucket", "").strip()
+        dest_prefix = request.form.get("dest_prefix", "").strip()
+        if not (dest_account_id and dest_bucket):
+            flash("Compte et bucket de destination requis", "error")
+            return back
+        if not can(g.user, dest_account_id, "upload"):
+            abort(403)
+        try:
+            obj_keys = _expand_keys(client, bucket, keys)
+        except ClientError as exc:
+            flash(f"Erreur OOS : {exc}", "error")
+            return back
+        if not obj_keys:
+            flash("Aucun objet à copier dans la sélection", "error")
+            return back
+        dest_account = storage.get_account_by_id(dest_account_id)
+        try:
+            job = storage.create_sync_job(
+                owner_id=g.user["id"],
+                name=f"Copie {datetime.now(timezone.utc):%Y-%m-%d %H:%M} — {bucket}/{prefix}",
+                source={"account_id": account_id, "bucket": bucket, "scope": "selection",
+                       "value": prefix, "keys": obj_keys},
+                dest={"account_id": dest_account_id, "bucket": dest_bucket, "prefix": dest_prefix},
+                delete_extraneous=False,
+                schedule={"enabled": False},
+            )
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return back
+        sync.run_async(job["id"], actor=g.user["username"])
+        audit.log("s3_write", "sync_job_create",
+                  f"Copie manuelle lancée — {account['name']}/{bucket}/{prefix} → "
+                  f"{dest_account['name'] if dest_account else dest_account_id}/{dest_bucket}/{dest_prefix} "
+                  f"({len(obj_keys)} objet(s))",
+                  target=job["name"])
+        flash(f"Copie de {len(obj_keys)} objet(s) lancée en arrière-plan — "
+              "suivez sa progression sur la page Synchronisation.", "success")
+        return redirect(url_for("sync.dashboard"))
 
     flash("Action groupée inconnue", "error")
     return back

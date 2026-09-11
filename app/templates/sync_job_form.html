@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}{{ "Modifier" if job else "Nouveau" }} job — Synchronisation{% endblock %}
+{% set WEEKDAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] %}
+{% block content %}
+<a class="back-link" href="{{ url_for('sync.dashboard') }}">&larr; Synchronisation</a>
+<h1 class="stitle">{{ "Modifier le" if job else "Nouveau" }} job de synchronisation</h1>
+
+<form class="form-card" method="post" id="sync-form">
+  <label>Nom
+    <input type="text" name="name" value="{{ job.name if job else '' }}" placeholder="Ex. Archives → backup froid" required>
+  </label>
+
+  <fieldset>
+    <legend>Source</legend>
+    <label>Compte
+      <select name="source_account_id" required>
+        <option value="">— choisir —</option>
+        {% for a in source_accounts %}
+        <option value="{{ a.id }}" {{ "selected" if job and job.source.account_id == a.id else "" }}>{{ a.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Bucket
+      <input type="text" name="source_bucket" class="mono" value="{{ job.source.bucket if job else '' }}" required>
+    </label>
+    <fieldset>
+      <legend>Portée</legend>
+      <label class="checkbox-row">
+        <input type="radio" name="source_scope" value="bucket" {{ "checked" if job and job.source.scope == "bucket" else "" }}>
+        Bucket entier
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="source_scope" value="prefix" {{ "checked" if not job or job.source.scope == "prefix" else "" }}>
+        Un préfixe (dossier)
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="source_scope" value="object" {{ "checked" if job and job.source.scope == "object" else "" }}>
+        Un seul objet
+      </label>
+    </fieldset>
+    <label data-scope="prefix object">Clé / préfixe source <span class="hint">(ex. <code>dossier/sous-dossier/</code> ou <code>dossier/fichier.txt</code>)</span>
+      <input type="text" name="source_value" class="mono" value="{{ job.source.value if job else '' }}">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Destination</legend>
+    <label>Compte
+      <select name="dest_account_id" required>
+        <option value="">— choisir —</option>
+        {% for a in dest_accounts %}
+        <option value="{{ a.id }}" {{ "selected" if job and job.dest.account_id == a.id else "" }}>{{ a.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Bucket
+      <input type="text" name="dest_bucket" class="mono" value="{{ job.dest.bucket if job else '' }}" required>
+    </label>
+    <label>Préfixe destination <span class="hint">(optionnel — les objets gardent leur chemin relatif sous ce préfixe)</span>
+      <input type="text" name="dest_prefix" class="mono" value="{{ job.dest.prefix if job else '' }}" placeholder="ex. archives/">
+    </label>
+  </fieldset>
+
+  <label class="checkbox-row">
+    <input type="checkbox" name="delete_extraneous" {{ "checked" if job and job.delete_extraneous else "" }}>
+    Supprimer côté destination les objets absents de la source (miroir strict)
+  </label>
+  <p class="hint" style="color: var(--err)">⚠ Destructeur : à chaque exécution, tout objet présent sous le
+    préfixe destination mais absent de la source sera supprimé. Décoché par défaut.</p>
+
+  <fieldset>
+    <legend>Planification</legend>
+    <label class="checkbox-row">
+      <input type="checkbox" name="schedule_enabled" id="schedule_enabled"
+             {{ "checked" if job and job.schedule.enabled else "" }}>
+      Planifier une exécution récurrente
+    </label>
+    <div data-schedule>
+      <label>Fréquence
+        <select name="frequency" id="frequency">
+          <option value="daily" {{ "selected" if not job or job.schedule.frequency == "daily" else "" }}>Quotidienne</option>
+          <option value="weekly" {{ "selected" if job and job.schedule.frequency == "weekly" else "" }}>Hebdomadaire</option>
+        </select>
+      </label>
+      <label data-freq="weekly">Jour
+        <select name="weekday">
+          {% for label in WEEKDAYS %}
+          <option value="{{ loop.index0 }}" {{ "selected" if job and job.schedule.weekday == loop.index0 else "" }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Heure (UTC)
+        <input type="number" name="hour" min="0" max="23" value="{{ job.schedule.hour if job else 3 }}" style="width:5em">
+      </label>
+      <label>Minute
+        <input type="number" name="minute" min="0" max="59" value="{{ job.schedule.minute if job else 0 }}" style="width:5em">
+      </label>
+    </div>
+    <p class="hint">Sans planification, le job reste disponible pour un lancement manuel (« Lancer maintenant »
+      depuis la liste des jobs).</p>
+  </fieldset>
+
+  <button class="btn blue" type="submit">Enregistrer</button>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('sync-form');
+  function syncScope() {
+    var scope = form.querySelector('input[name="source_scope"]:checked');
+    scope = scope ? scope.value : 'prefix';
+    form.querySelectorAll('[data-scope]').forEach(function (el) {
+      el.hidden = el.dataset.scope.split(' ').indexOf(scope) === -1;
+    });
+  }
+  function syncSchedule() {
+    var on = document.getElementById('schedule_enabled').checked;
+    form.querySelector('[data-schedule]').hidden = !on;
+  }
+  function syncFreq() {
+    var weekly = document.getElementById('frequency').value === 'weekly';
+    form.querySelectorAll('[data-freq="weekly"]').forEach(function (el) { el.hidden = !weekly; });
+  }
+  form.querySelectorAll('input[name="source_scope"]').forEach(function (r) {
+    r.addEventListener('change', syncScope);
+  });
+  document.getElementById('schedule_enabled').addEventListener('change', syncSchedule);
+  document.getElementById('frequency').addEventListener('change', syncFreq);
+  syncScope();
+  syncSchedule();
+  syncFreq();
+})();
+</script>
+{% endblock %}

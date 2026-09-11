@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}Synchronisation{% endblock %}
+{% set STATE_BDG = {"idle": "inactif", "running": "running", "done": "success", "error": "error", "rights_error": "error"} %}
+{% set STATE_LABEL = {"idle": "inactive", "running": "en cours", "done": "ok", "error": "erreur", "rights_error": "droits insuffisants"} %}
+{% block content %}
+<h1 class="stitle">Synchronisation</h1>
+<p class="hint">Copie ou synchronise des objets d'un bucket vers un autre, y compris entre comptes ou
+  providers différents — les objets transitent par ce serveur (pas de copie native côté S3 entre deux
+  endpoints différents). Un job sans planification reste disponible pour un lancement manuel ; un job
+  planifié se relance seul selon l'horaire choisi (UTC). Les droits (téléchargement sur la source, dépôt
+  — et suppression si la case « supprimer les objets absents » est cochée — sur la destination) sont
+  revérifiés à chaque exécution : s'ils manquent, le job est désactivé automatiquement.</p>
+
+{% if can_create %}
+<div class="toolbar">
+  <a class="btn blue sm" href="{{ url_for('sync.job_new') }}">{{ macros.icon("plus") }} Nouveau job</a>
+</div>
+{% else %}
+<p class="hint">Aucun compte ne vous donne à la fois le droit de téléchargement (source) et de dépôt
+  (destination) — un administrateur doit vous ajouter aux groupes nécessaires pour créer un job.</p>
+{% endif %}
+
+<table class="tbl" id="sync-table">
+  <thead><tr>
+    <th>Nom</th><th>Source</th><th>Destination</th><th>Statut</th>
+    <th>Dernière exécution</th><th>Prochaine exécution</th><th></th>
+  </tr></thead>
+  <tbody>
+  {% for job in jobs %}
+  <tr data-job-id="{{ job.id }}" data-state="{{ job.state }}">
+    <td>{{ job.name }}
+      {% if job.delete_extraneous %}<br><span class="hint">miroir (supprime à destination)</span>{% endif %}
+      {% if job.schedule_enabled %}<br><span class="hint">{{ macros.icon("repeat") }} planifié</span>{% endif %}
+    </td>
+    <td class="mono hint">{{ job.source_label }}</td>
+    <td class="mono hint">{{ job.dest_label }}</td>
+    <td>
+      <span class="bdg state-bdg {{ STATE_BDG.get(job.state, "") }}">{{ STATE_LABEL.get(job.state, job.state) }}</span>
+      <div class="sync-progress" {{ "hidden" if job.state != "running" else "" }}>
+        <div class="sync-progress-bar" style="width: {{ ((job.progress.done * 100 // job.progress.total) if job.progress and job.progress.total else 0) }}%"></div>
+      </div>
+    </td>
+    <td class="hint">
+      {% if job.last_run_at %}{{ job.last_run_at[:19] | replace("T", " ") }} UTC<br>{{ job.last_summary }}
+      {% else %}jamais{% endif %}
+    </td>
+    <td class="hint">{{ job.next_run_at or "—" }}</td>
+    <td class="row-actions">
+      <form method="post" action="{{ url_for('sync.job_run', job_id=job.id) }}">
+        <button class="btn icon ghost sm" type="submit" title="Lancer maintenant" {{ "disabled" if not job.enabled else "" }}>{{ macros.icon("play") }}</button>
+      </form>
+      {% if job.editable %}
+      <a class="btn icon ghost sm" title="Modifier" href="{{ url_for('sync.job_edit', job_id=job.id) }}">{{ macros.icon("edit") }}</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('sync.job_delete', job_id=job.id) }}" onsubmit="return confirm('Supprimer ce job ?');">
+        <button class="btn icon ghost sm" type="submit" title="Supprimer">{{ macros.icon("trash") }}</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="hint">Aucun job de synchronisation</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if not jobs %}<p></p>{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var table = document.getElementById("sync-table");
+  if (!table) return;
+  var STATE_BDG = {{ STATE_BDG | tojson }};
+  var STATE_LABEL = {{ STATE_LABEL | tojson }};
+
+  function refresh() {
+    fetch("{{ url_for('sync.status') }}", { headers: { "X-Requested-With": "fetch" } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        (data.jobs || []).forEach(function (j) {
+          var row = table.querySelector('tr[data-job-id="' + j.id + '"]');
+          if (!row) return;
+          row.setAttribute("data-state", j.state);
+          var badge = row.querySelector(".state-bdg");
+          if (badge) {
+            badge.className = "bdg state-bdg " + (STATE_BDG[j.state] || "");
+            badge.textContent = STATE_LABEL[j.state] || j.state;
+          }
+          var bar = row.querySelector(".sync-progress");
+          if (bar) {
+            bar.hidden = j.state !== "running";
+            var pct = (j.total ? Math.floor(j.done / j.total * 100) : 0);
+            bar.querySelector(".sync-progress-bar").style.width = pct + "%";
+          }
+          var runBtn = row.querySelector('form[action*="/run"] button');
+          if (runBtn) runBtn.disabled = !j.enabled;
+        });
+      })
+      .catch(function () { /* transient network error — next tick retries */ });
+  }
+
+  setInterval(refresh, 3000);
+})();
+</script>
+{% endblock %}

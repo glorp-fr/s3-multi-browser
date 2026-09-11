@@ -364,3 +364,11 @@ a:hover { text-decoration: underline; }
 .ver-check.is-error { border-left-color: var(--err); background: var(--err-bg); }
 .ver-check p { margin: 6px 0; }
 .ver-check .ico { vertical-align: -3px; }
+
+/* Synchronisation */
+
+.sync-progress {
+  width: 100px; height: 6px; margin-top: 6px; border-radius: 999px;
+  background: var(--panel-2); overflow: hidden;
+}
+.sync-progress-bar { height: 100%; background: var(--warn); transition: width .4s ease; }
