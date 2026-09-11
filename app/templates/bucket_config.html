@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% import "_macros.html" as macros %}
+{% block title %}{{ bucket }} — Configuration{% endblock %}
+{% block content_wide %} wide{% endblock %}
+{% block content %}
+<a class="back-link" href="{{ url_for('explorer.buckets', account_id=account.id) }}">&larr; {{ account.name }}</a>
+<h1 class="stitle">{{ macros.icon("settings") }} {{ bucket }} <span class="hint mono">({{ account.name }})</span></h1>
+
+<div class="tabs">
+  <button class="tab is-active" type="button" data-tab="versioning">Versionning</button>
+  <button class="tab" type="button" data-tab="lock">Verrouillage</button>
+  <button class="tab" type="button" data-tab="lifecycle">Lifecycle</button>
+  <button class="tab" type="button" data-tab="policy">Policy</button>
+  <button class="tab" type="button" data-tab="acl">ACL</button>
+</div>
+
+{% macro undo_button(section) %}
+{% set snap = snapshots.get(section) %}
+{% if snap %}
+<form method="post" action="{{ url_for('bucket_config.undo', account_id=account.id, bucket=bucket, section=section) }}"
+      class="inline-form" style="margin-top:10px"
+      onsubmit="return confirm('Restaurer l\'état de « {{ section }} » précédant la dernière modification (enregistrée le {{ snap.saved_at }} UTC) ?');">
+  <button class="btn ghost sm" type="submit">{{ macros.icon("undo") }} Annuler la dernière modification</button>
+  <span class="hint">état sauvegardé le {{ snap.saved_at }} UTC</span>
+</form>
+{% endif %}
+{% endmacro %}
+
+<!-- Versioning ---------------------------------------------------------------------- -->
+<section class="tabpane" data-pane="versioning">
+  {% if errors.versioning %}
+    <p class="hint">Erreur de lecture : {{ errors.versioning }}</p>
+  {% else %}
+  <p class="hint">État actuel :
+    <span class="bdg {{ 'success' if state.versioning == 'Enabled' else 'inactif' }}">
+      {{ state.versioning or "jamais activé" }}
+    </span>
+    {% if not state.versioning %}<br>Le versionning n'a jamais été activé sur ce bucket ; une fois activé, il ne peut plus être « désactivé », seulement suspendu.{% endif %}
+  </p>
+  <form class="form-card" method="post"
+        action="{{ url_for('bucket_config.versioning', account_id=account.id, bucket=bucket) }}">
+    <label class="checkbox-row">
+      <input type="radio" name="status" value="Enabled" {{ "checked" if state.versioning == "Enabled" else "" }}>
+      Activé
+    </label>
+    <label class="checkbox-row">
+      <input type="radio" name="status" value="Suspended" {{ "checked" if state.versioning != "Enabled" else "" }}>
+      Suspendu
+    </label>
+    <button class="btn blue" type="submit">Enregistrer</button>
+  </form>
+  {{ undo_button("versioning") }}
+  {% endif %}
+</section>
+
+<!-- Object Lock ---------------------------------------------------------------------- -->
+<section class="tabpane" data-pane="lock" hidden>
+  {% if errors.lock %}
+    <p class="hint">Erreur de lecture : {{ errors.lock }}</p>
+  {% elif not state.lock.supported %}
+    <p class="hint">Verrouillage non supporté par ce provider.</p>
+  {% elif not state.lock.enabled %}
+    <p class="hint">Verrouillage non activé — <strong>non activable après coup</strong> : Object Lock ne
+      peut être activé qu'à la création du bucket (limitation S3).</p>
+  {% else %}
+  <p class="hint">Verrouillage activé sur ce bucket.
+    {% if state.lock.rule %}
+      Rétention par défaut : <strong>{{ state.lock.rule.mode }}</strong>,
+      {{ state.lock.rule.days }}{% if state.lock.rule.days %} jour(s){% endif %}
+      {{ state.lock.rule.years }}{% if state.lock.rule.years %} année(s){% endif %}
+    {% else %}
+      Aucune rétention par défaut définie.
+    {% endif %}
+  </p>
+  <form class="form-card" method="post" id="lock-form"
+        action="{{ url_for('bucket_config.lock', account_id=account.id, bucket=bucket) }}">
+    <label class="checkbox-row">
+      <input type="checkbox" name="rule_enabled" id="lock-rule-enabled" {{ "checked" if state.lock.rule else "" }}>
+      Définir une rétention par défaut
+    </label>
+    <fieldset id="lock-rule-fields" {{ "hidden" if not state.lock.rule else "" }}>
+      <legend>Rétention par défaut</legend>
+      <label class="checkbox-row">
+        <input type="radio" name="mode" value="GOVERNANCE" {{ "checked" if not state.lock.rule or state.lock.rule.mode == "GOVERNANCE" else "" }}>
+        Gouvernance
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="mode" value="COMPLIANCE" {{ "checked" if state.lock.rule and state.lock.rule.mode == "COMPLIANCE" else "" }}>
+        Conformité
+      </label>
+      <label>Durée
+        <input type="number" name="value" min="1" style="width:6em"
+               value="{{ (state.lock.rule.days or state.lock.rule.years) if state.lock.rule else 1 }}">
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="unit" value="days" {{ "checked" if not state.lock.rule or state.lock.rule.days else "" }}>
+        Jours
+      </label>
+      <label class="checkbox-row">
+        <input type="radio" name="unit" value="years" {{ "checked" if state.lock.rule and state.lock.rule.years else "" }}>
+        Années
+      </label>
+    </fieldset>
+    <button class="btn blue" type="submit">Enregistrer</button>
+  </form>
+  {{ undo_button("lock") }}
+  {% endif %}
+</section>
+
+<!-- Lifecycle ------------------------------------------------------------------------ -->
+<section class="tabpane" data-pane="lifecycle" hidden>
+  {% if errors.lifecycle %}
+    <p class="hint">Erreur de lecture : {{ errors.lifecycle }}</p>
+  {% else %}
+  <form class="form-card" method="post" id="lifecycle-form"
+        action="{{ url_for('bucket_config.lifecycle', account_id=account.id, bucket=bucket) }}">
+    <div id="lifecycle-rules">
+      {% for r in state.lifecycle %}
+      <fieldset class="lc-rule">
+        <legend>Règle</legend>
+        <input type="hidden" name="rule_id" value="{{ r.id }}">
+        <label class="checkbox-row">
+          <input type="checkbox" name="rule_enabled" value="1" {{ "checked" if r.enabled else "" }}>
+          Activée
+        </label>
+        <label>Préfixe <span class="hint">(vide = tout le bucket)</span>
+          <input type="text" name="rule_prefix" class="mono" value="{{ r.prefix }}">
+        </label>
+        <label>Expiration des objets <span class="hint">(jours, vide = désactivé)</span>
+          <input type="number" name="rule_expiration_days" min="1" style="width:7em" value="{{ r.expiration_days or '' }}">
+        </label>
+        <label>Expiration des versions précédentes <span class="hint">(jours, vide = désactivé)</span>
+          <input type="number" name="rule_noncurrent_days" min="1" style="width:7em" value="{{ r.noncurrent_expiration_days or '' }}">
+        </label>
+        <label>Nettoyage des uploads multipart incomplets <span class="hint">(jours, vide = désactivé)</span>
+          <input type="number" name="rule_abort_multipart_days" min="1" style="width:7em" value="{{ r.abort_incomplete_multipart_days or '' }}">
+        </label>
+        <button class="btn red sm" type="button" data-lc-remove>{{ macros.icon("trash") }} Supprimer la règle</button>
+      </fieldset>
+      {% endfor %}
+    </div>
+    <button class="btn ghost sm" type="button" id="lc-add">{{ macros.icon("plus") }} Ajouter une règle</button>
+    <div>
+      <button class="btn blue" type="submit">Enregistrer</button>
+    </div>
+  </form>
+  {{ undo_button("lifecycle") }}
+
+  <template id="lc-rule-template">
+    <fieldset class="lc-rule">
+      <legend>Règle</legend>
+      <input type="hidden" name="rule_id" value="">
+      <label class="checkbox-row">
+        <input type="checkbox" name="rule_enabled" value="1" checked>
+        Activée
+      </label>
+      <label>Préfixe <span class="hint">(vide = tout le bucket)</span>
+        <input type="text" name="rule_prefix" class="mono" value="">
+      </label>
+      <label>Expiration des objets <span class="hint">(jours, vide = désactivé)</span>
+        <input type="number" name="rule_expiration_days" min="1" style="width:7em" value="">
+      </label>
+      <label>Expiration des versions précédentes <span class="hint">(jours, vide = désactivé)</span>
+        <input type="number" name="rule_noncurrent_days" min="1" style="width:7em" value="">
+      </label>
+      <label>Nettoyage des uploads multipart incomplets <span class="hint">(jours, vide = désactivé)</span>
+        <input type="number" name="rule_abort_multipart_days" min="1" style="width:7em" value="">
+      </label>
+      <button class="btn red sm" type="button" data-lc-remove>{{ macros.icon("trash") }} Supprimer la règle</button>
+    </fieldset>
+  </template>
+  {% endif %}
+</section>
+
+<!-- Policy --------------------------------------------------------------------------- -->
+<section class="tabpane" data-pane="policy" hidden>
+  {% if errors.policy %}
+    <p class="hint">Erreur de lecture : {{ errors.policy }}</p>
+  {% else %}
+  <p class="hint">
+    {% if state.policy %}Une bucket policy est actuellement définie.{% else %}Aucune bucket policy définie.{% endif %}
+  </p>
+  <form class="form-card" method="post"
+        action="{{ url_for('bucket_config.policy', account_id=account.id, bucket=bucket) }}">
+    <label>Policy (JSON IAM)
+      <textarea name="policy" class="mono" rows="14" spellcheck="false"
+                placeholder='{&#10;  "Version": "2012-10-17",&#10;  "Statement": []&#10;}'>{{ policy_pretty or "" }}</textarea>
+    </label>
+    <div class="row-actions">
+      <button class="btn blue" type="submit" name="action" value="save">Enregistrer</button>
+      {% if state.policy %}
+      <button class="btn red" type="submit" name="action" value="delete"
+              onclick="return confirm('Supprimer la bucket policy ?');">Supprimer la policy</button>
+      {% endif %}
+    </div>
+  </form>
+  {{ undo_button("policy") }}
+  {% endif %}
+</section>
+
+<!-- ACL ------------------------------------------------------------------------------ -->
+<section class="tabpane" data-pane="acl" hidden>
+  {% if errors.acl %}
+    <p class="hint">Erreur de lecture : {{ errors.acl }}</p>
+  {% else %}
+  <p class="hint">Propriétaire : <span class="mono">{{ state.acl.owner.DisplayName or state.acl.owner.ID or "—" }}</span></p>
+  <table class="tbl">
+    <thead><tr><th>Bénéficiaire</th><th>Permission</th></tr></thead>
+    <tbody>
+    {% for g in state.acl.grants %}
+      <tr>
+        <td class="mono">
+          {% if g.type == "Group" %}{{ g.uri }}{% else %}{{ g.display_name or g.id }}{% endif %}
+        </td>
+        <td>{{ g.permission }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="2" class="hint">Aucun grant</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <form class="form-card" method="post" style="margin-top:14px"
+        action="{{ url_for('bucket_config.acl', account_id=account.id, bucket=bucket) }}"
+        onsubmit="var v=this.canned.value; if (['public-read','public-read-write'].includes(v)) { return confirm('Cette ACL rend le bucket accessible publiquement. Confirmer ?'); }">
+    <label>Nouvelle ACL prédéfinie
+      <select name="canned">
+        <option value="">— ne pas modifier —</option>
+        {% for c in canned_acls %}
+        <option value="{{ c }}">{{ c }}{{ " ⚠ accès public" if c in public_acls else "" }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="hint">⚠ <code>public-read</code> et <code>public-read-write</code> rendent le bucket
+      (ou son contenu) accessible sans authentification.</div>
+    <button class="btn blue" type="submit">Enregistrer</button>
+  </form>
+  {{ undo_button("acl") }}
+  {% endif %}
+</section>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  var panes = Array.prototype.slice.call(document.querySelectorAll(".tabpane"));
+  function showTab(name) {
+    tabs.forEach(function (t) { t.classList.toggle("is-active", t.getAttribute("data-tab") === name); });
+    panes.forEach(function (p) { p.hidden = p.getAttribute("data-pane") !== name; });
+  }
+  tabs.forEach(function (t) { t.addEventListener("click", function () { showTab(t.getAttribute("data-tab")); }); });
+
+  var lockCheckbox = document.getElementById("lock-rule-enabled");
+  if (lockCheckbox) {
+    lockCheckbox.addEventListener("change", function () {
+      document.getElementById("lock-rule-fields").hidden = !this.checked;
+    });
+  }
+
+  var lcRules = document.getElementById("lifecycle-rules");
+  var lcTemplate = document.getElementById("lc-rule-template");
+  var lcAdd = document.getElementById("lc-add");
+  function bindRemove(fieldset) {
+    fieldset.querySelector("[data-lc-remove]").addEventListener("click", function () {
+      fieldset.remove();
+    });
+  }
+  if (lcRules) {
+    Array.prototype.slice.call(lcRules.querySelectorAll(".lc-rule")).forEach(bindRemove);
+    lcAdd.addEventListener("click", function () {
+      var clone = lcTemplate.content.firstElementChild.cloneNode(true);
+      lcRules.appendChild(clone);
+      bindRemove(clone);
+    });
+  }
+})();
+</script>
+{% endblock %}

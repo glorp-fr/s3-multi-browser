@@ -33,10 +33,12 @@ def create_app():
     from .routes.admin_routes import bp as admin_bp
     from .routes.explorer_routes import bp as explorer_bp
     from .routes.sync_routes import bp as sync_bp
+    from .routes.bucket_config_routes import bp as bucket_config_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(explorer_bp)
     app.register_blueprint(sync_bp)
+    app.register_blueprint(bucket_config_bp)
 
     return app

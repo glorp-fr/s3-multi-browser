@@ -16,7 +16,8 @@ chiffré côté serveur.
   soit utilisateur standard dont les accès découlent uniquement de ses **groupes**.
 - **Groupes** (`Administration → Groupes`) : unité de contrôle d'accès. Un groupe couvre un ensemble
   de comptes S3 (liste explicite ou « tous les comptes ») et porte un jeu de droits fins : `download`,
-  `upload`, `delete`, `bucket_admin` (créer/supprimer des buckets). La navigation (lister les buckets,
+  `upload`, `delete`, `bucket_admin` (créer/supprimer des buckets, éditer leur configuration —
+  versionning/lock/lifecycle/policy/ACL). La navigation (lister les buckets,
   parcourir, rechercher, recalculer la volumétrie) est implicite sur tout compte couvert. Un
   utilisateur peut appartenir à plusieurs groupes : ses accès et droits effectifs sont l'**union** de
   ses groupes. Un groupe sans droit coché = lecture seule.
@@ -31,6 +32,18 @@ chiffré côté serveur.
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
+- **Configuration de bucket** (bouton *Configurer*, droit `bucket_admin`) : édition graphique
+  (cases à cocher / champs, pas de JSON à écrire à la main sauf pour la policy) de 5 réglages S3,
+  chacun affichant son état actuel et annulable indépendamment (un niveau d'undo, état restauré
+  tel qu'il était juste avant le dernier « Enregistrer ») :
+  - **Versionning** : activé / suspendu (irréversible vers « jamais activé », limitation S3) ;
+  - **Object Lock** : rétention par défaut (mode Gouvernance/Conformité + durée) si le bucket a
+    été créé avec le verrouillage activé (non activable après coup, limitation S3) ;
+  - **Lifecycle** : règles ajoutables/supprimables (préfixe, expiration des objets, expiration
+    des versions précédentes, nettoyage des uploads multipart incomplets) ;
+  - **Bucket policy** : éditeur JSON IAM brut, avec suppression ;
+  - **ACL** : ACL prédéfinie (`private`, `public-read`, …) avec avertissement + confirmation avant
+    tout accès public, grants actuels affichés en lecture seule.
 - **Synchronisation entre buckets** (`/sync`) : jobs planifiés de copie objet / préfixe / bucket
   entier vers un autre bucket, **cross-compte et cross-provider** (les objets transitent par le
   serveur en flux, jamais bufferisés). Suppression des objets absents de la source **optionnelle**

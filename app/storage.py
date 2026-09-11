@@ -94,7 +94,8 @@ def _merge_defaults(target, defaults):
 
 def _empty_db():
     return {"users": [], "accounts": [], "providers": [], "groups": [],
-            "backup": _default_backup(), "sync_jobs": [], "_providers_seeded": False}
+            "backup": _default_backup(), "sync_jobs": [], "bucket_config_snapshots": [],
+            "_providers_seeded": False}
 
 
 def _load():
@@ -109,6 +110,7 @@ def _load():
     data.setdefault("providers", [])
     data.setdefault("groups", [])
     data.setdefault("sync_jobs", [])
+    data.setdefault("bucket_config_snapshots", [])
     data.setdefault("_providers_seeded", False)
     _merge_defaults(data.setdefault("backup", {}), _default_backup())
     return data
@@ -738,3 +740,46 @@ def record_sync_job_result(job_id, *, state, summary):
         job["status"]["last_summary"] = summary
         _save(data)
         return job
+
+
+# --- Bucket config undo snapshots -----------------------------------------------------
+# One-level undo: each (account_id, bucket, section) key holds the state captured right
+# before the last "Enregistrer" on that section. Overwritten on every new apply; cleared
+# once "Annuler" replays it, so a second undo has nothing left to restore.
+
+def _bucket_config_key(account_id, bucket, section):
+    return f"{account_id}/{bucket}/{section}"
+
+
+def get_bucket_config_snapshot(account_id, bucket, section):
+    key = _bucket_config_key(account_id, bucket, section)
+    return next((s for s in _load()["bucket_config_snapshots"] if s["id"] == key), None)
+
+
+def save_bucket_config_snapshot(account_id, bucket, section, value, saved_by):
+    key = _bucket_config_key(account_id, bucket, section)
+    with _lock:
+        data = _load()
+        data["bucket_config_snapshots"] = [
+            s for s in data["bucket_config_snapshots"] if s["id"] != key
+        ]
+        data["bucket_config_snapshots"].append({
+            "id": key,
+            "account_id": account_id,
+            "bucket": bucket,
+            "section": section,
+            "value": value,
+            "saved_by": saved_by,
+            "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        })
+        _save(data)
+
+
+def delete_bucket_config_snapshot(account_id, bucket, section):
+    key = _bucket_config_key(account_id, bucket, section)
+    with _lock:
+        data = _load()
+        data["bucket_config_snapshots"] = [
+            s for s in data["bucket_config_snapshots"] if s["id"] != key
+        ]
+        _save(data)

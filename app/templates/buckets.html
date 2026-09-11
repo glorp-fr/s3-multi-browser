@@ -42,6 +42,7 @@
     <thead><tr>
       <th class="chk"><input type="checkbox" class="bulk-all" title="Tout sélectionner"></th>
       <th>Bucket</th><th>Créé le</th><th>Usage</th><th>Objets</th><th>Volumétrie maj le</th>
+      {% if 'bucket_admin' in perms %}<th></th>{% endif %}
     </tr></thead>
     <tbody>
     {% for b in buckets %}
@@ -55,9 +56,16 @@
           {% if b.usage %}{{ b.usage.computed_at.strftime('%d/%m/%Y %H:%M') }} UTC{% else %}jamais{% endif %}
           {% if not b.refresh_allowed %}<br><span class="hint">prochaine maj possible le {{ b.next_refresh_at.strftime('%d/%m/%Y %H:%M') }} UTC</span>{% endif %}
         </td>
+        {% if 'bucket_admin' in perms %}
+        <td class="row-actions">
+          <a class="btn ghost sm" href="{{ url_for('bucket_config.config', account_id=account.id, bucket=b.name) }}">
+            {{ macros.icon("settings") }} Configurer
+          </a>
+        </td>
+        {% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="6" class="hint">Aucun bucket</td></tr>
+      <tr><td colspan="7" class="hint">Aucun bucket</td></tr>
     {% endfor %}
     </tbody>
   </table>

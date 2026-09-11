@@ -40,6 +40,47 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Éditeur graphique de configuration de bucket — versionning, lock, lifecycle, policy, ACL (v0.9.0)
+
+Nouveau bouton **Configurer** sur chaque bucket (droit `bucket_admin`, réutilisé — pas de nouveau
+droit de groupe). Choix validés avec l'utilisateur avant implémentation : périmètre complet dès la
+v1 (versionning + lock + lifecycle **et** policy + ACL, pas juste les 3 premiers) ; undo réel après
+application (pas un simple rechargement de formulaire) — un seul niveau, l'état S3 capturé juste
+avant le dernier « Enregistrer » de chaque section, remplacé à chaque nouvelle application.
+
+- **`app/bucket_config.py`** (nouveau) : `get_*`/`set_*` symétriques par section — le get renvoie
+  exactement ce que le set attend en entrée, ce qui permet à la route de faire l'undo générique
+  (capturer `get_*` avant `set_*`, rejouer la valeur capturée à l'appel d'annulation) sans logique
+  spécifique par section. Erreurs S3 « pas configuré » (`NoSuchLifecycleConfiguration`,
+  `NoSuchBucketPolicy`, `ObjectLockConfigurationNotFoundError`) et « non supporté par ce provider »
+  avalées et ramenées à un état par défaut plutôt que de faire planter la page.
+  - Versionning : `Enabled`/`Suspended` seulement — irréversible vers « jamais activé » (limitation
+    S3, pas un bug de l'app) ; l'undo depuis l'état « jamais configuré » est un no-op signalé par un
+    message, la snapshot est quand même purgée.
+  - Object Lock : seule la règle de rétention par défaut est éditable — `ObjectLockEnabled` est
+    immuable après la création du bucket côté S3, donc affiché en lecture seule (page indique
+    explicitement que ce n'est pas activable après coup).
+  - Lifecycle : règles simplifiées (préfixe, activé, expiration objets, expiration versions
+    précédentes, nettoyage multipart incomplet) ; liste vide ⇒ `delete_bucket_lifecycle` (attention,
+    ce n'est **pas** `delete_bucket_lifecycle_configuration`, qui n'existe pas sur le client boto3).
+  - Policy : éditeur JSON brut, validé (`json.loads`) côté serveur avant tout appel S3 ; policy vide
+    ⇒ suppression plutôt que policy invalide.
+  - ACL : formulaire = ACL prédéfinie (`private`/`public-read`/…) uniquement, pas d'édition de
+    grants bruts (plus sûr) ; mais la snapshot d'undo capture les **grants exacts** (`get_bucket_acl`)
+    et les rejoue via `put_bucket_acl(AccessControlPolicy=...)`, donc l'undo restaure fidèlement même
+    une ACL d'origine non-« canned ». Bandeau d'alerte + confirmation JS avant toute ACL publique.
+- **`storage.py`** : collection `bucket_config_snapshots`, une entrée par
+  `(account_id, bucket, section)` — écrasée à chaque nouvel « Enregistrer », effacée une fois
+  l'« Annuler » rejoué (pas d'historique multi-niveaux).
+- **`app/routes/bucket_config_routes.py`** (nouveau blueprint) : une route POST par section
+  (`/config/versioning`, `/lock`, `/lifecycle`, `/policy`, `/acl`) + une route générique
+  `/config/<section>/undo`. Gate `bucket_admin` comme `bucket_new`/`bucket_delete`.
+- **Template** `bucket_config.html` (onglets, un par section) + lien « Configurer » dans
+  `buckets.html`. Icônes `settings`/`lock`/`undo`/`alert-triangle` ajoutées à `_macros.html`.
+- **Tests** (script client Flask + `moto` mocké, non versionné, même méthode que la synchro) :
+  cycle apply→undo pour les 5 sections, y compris le cas « versionning jamais activé » et un
+  bucket créé avec Object Lock (`ObjectLockEnabledForBucket=True`) vs un bucket sans lock.
+
 ### Synchronisation — navigateur de préfixe/objet en liste (v0.8.2)
 
 Même traitement que le bucket (v0.8.1) appliqué aux champs de chemin : la clé/préfixe source
