@@ -40,6 +40,17 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Fix : ACL prédéfinie invalide sur PutBucketAcl (v0.9.2)
+
+Bug remonté par l'utilisateur en testant v0.9.1 en réel : `bucket-owner-read` et
+`bucket-owner-full-control` — présentes dans `CANNED_ACLS` depuis la v0.9.0 — provoquaient
+`InvalidArgument` sur `PutBucketAcl`. Ces deux valeurs ne sont valides que pour `PutObjectAcl` /
+`CopyObject` (ACL **objet**), jamais pour une ACL de **bucket** — confirmé via
+`botocore` (`operation_model('PutBucketAcl').input_shape.members['ACL'].enum` ne liste que
+`private`, `public-read`, `public-read-write`, `authenticated-read`). Retirées de
+`bucket_config.CANNED_ACLS` ; les 4 valeurs restantes réappliquées de bout en bout en test
+(moto) pour confirmer qu'aucune ne renvoie plus d'erreur.
+
 ### Options à la création de bucket + policy/ACL en deux colonnes + sidebar (v0.9.1)
 
 Suite directe de la v0.9.0, choix validés avec l'utilisateur avant implémentation : le formulaire

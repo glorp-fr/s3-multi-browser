@@ -151,10 +151,10 @@ def set_policy(client, bucket, policy_json):
 
 # --- ACL -------------------------------------------------------------------------------
 
-CANNED_ACLS = (
-    "private", "public-read", "public-read-write", "authenticated-read",
-    "bucket-owner-read", "bucket-owner-full-control",
-)
+CANNED_ACLS = ("private", "public-read", "public-read-write", "authenticated-read")
+# "bucket-owner-read" / "bucket-owner-full-control" are only valid for PutObjectAcl /
+# CopyObject, not PutBucketAcl (rejected as InvalidArgument if attempted on a bucket) —
+# deliberately excluded here.
 PUBLIC_ACLS = ("public-read", "public-read-write")
 
 
@@ -179,11 +179,9 @@ _AUTH_USERS_URI = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
 
 
 def detect_canned_acl(snapshot):
-    """Best-effort match of a get_acl() snapshot against a canned ACL name — None if the
-    current grants are custom (e.g. cross-account grants) and not representable as one of
-    the predefined values. Only the four canned ACLs expressible purely from owner + the
-    standard groups are considered; bucket-owner-read/-full-control need cross-account
-    context we don't have here and are never detected."""
+    """Best-effort match of a get_acl() snapshot against one of the four bucket-level canned
+    ACLs — None if the current grants are custom (e.g. explicit cross-account grants) and
+    not representable as one of them."""
     owner_id = (snapshot.get("owner") or {}).get("ID")
     non_owner = {
         (g.get("uri"), g["permission"]) for g in snapshot.get("grants", [])
