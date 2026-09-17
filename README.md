@@ -89,11 +89,15 @@ chiffré côté serveur.
 - **Logs** (`Administration → Logs`) : journal d'audit de toutes les actions — connexions/déconnexions
   et échecs de connexion, actions S3 en lecture (listing, navigation, téléchargement) et en écriture
   (upload, création/suppression de bucket, dossier, objet), CRUD admin. Vue **temps réel** (rafraîchie
-  toutes les 3 s) avec recherche, filtre par catégorie et bouton **Pause**, plus un onglet **historique
-  des connexions**. Aucun secret ni mot de passe n'est journalisé. Stocké dans `data/audit.jsonl`
-  (JSON Lines, plafonné à 5 Mo puis une rotation `.1`).
-- **Sauvegarde de configuration** (`Administration → Sauvegarde`) : archive `data/db.json` + le
-  journal d'audit dans un `.tar.gz` horodaté, envoyé vers **S3** (endpoint / AK / SK / bucket /
+  toutes les 3 s) avec recherche, filtre par catégorie et bouton **Pause**, un onglet **historique
+  des connexions**, et un onglet **Historique & téléchargement**. Aucun secret ni mot de passe n'est
+  journalisé. Stocké dans `data/audit.jsonl` (JSON Lines, plafonné à 5 Mo puis rotation vers une
+  archive datée `audit-AAAAMMJJ-HHMMSS.jsonl` — l'historique s'accumule au lieu d'être écrasé).
+  **Rétention configurable** (en jours ; le fichier en cours n'est jamais purgé) ; **chaque fichier**
+  (courant ou archivé) est **téléchargeable individuellement** depuis cet onglet.
+- **Sauvegarde de configuration** (`Administration → Sauvegarde`) : archive `data/db.json` + tout
+  l'historique de logs actuellement conservé (fichier courant + chaque archive retenue) dans un
+  `.tar.gz` horodaté, envoyé vers **S3** (endpoint / AK / SK / bucket /
   préfixe) ou **SMB** (serveur / partage / sous-dossier / domaine / utilisateur / mot de passe).
   Fréquence quotidienne ou hebdomadaire, heure en **UTC**, **rétention** (N archives conservées sur
   la cible, les plus anciennes sont purgées). Le mot de passe SMB et la Secret Key S3 sont chiffrés

@@ -40,6 +40,52 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Historisation des logs avec rétention + téléchargement (v0.9.9)
+
+Demande de l'utilisateur : « mettre en place une historisation des logs avec paramètre de
+rétention, et la possibilité de les télécharger ». Choix validés avant implémentation
+(`AskUserQuestion`) : rétention en **durée (jours)**, téléchargement **fichier par fichier**,
+sauvegarde de config étendue à **tout l'historique conservé**, réglages sur la **page Logs
+existante** (pas de nouvelle page dédiée).
+
+- **`app/audit.py`** : la rotation (déclenchée au dépassement des 5 Mo du fichier courant,
+  inchangé) n'écrase plus un unique `audit.jsonl.1` — elle déplace le fichier vers une archive
+  **datée** `audit-AAAAMMJJ-HHMMSS.jsonl` (`_rotate()`), jamais réécrite ensuite : l'historique
+  s'accumule au lieu d'être perdu à chaque rotation. `purge_expired_archives(retention_days)`
+  supprime les archives (jamais le fichier courant) plus vieilles que la rétention configurée —
+  appelée **juste après chaque rotation** et par un **balayage quotidien** (`threading.Timer`,
+  même pattern que `backup.py`/`sync.py`, démarré depuis `start()` appelé une fois dans
+  `create_app()`). **Mono-worker gunicorn requis** comme le reste (sinon balayage redondant par
+  worker — inoffensif ici car la purge est idempotente, mais gardé cohérent avec l'existant).
+  `list_log_files()` / `resolve_log_file(name)` pour la page admin (le second valide `name`
+  contre les fichiers réellement présents, aucun séparateur de chemin toléré — vient d'un segment
+  d'URL, traité comme non fiable). **Migration automatique** au démarrage
+  (`migrate_legacy_rotation()`) : un `audit.jsonl.1` de l'ancien schéma (mono-niveau) est replié
+  dans le nouveau schéma daté à partir de sa date de modification, pour rester visible dans
+  l'historique au lieu d'être ignoré silencieusement.
+  **Vue temps réel inchangée en portée** (« Journal applicatif » / « Historique des connexions »
+  continuent de ne lire que le fichier courant + la dernière archive, comme avant) — lire
+  potentiellement des dizaines de fichiers d'historique à chaque poll de 3 s aurait dégradé les
+  perfs pour un gain nul, l'historique complet restant consultable via le nouvel onglet.
+- **`storage.py`** : nouveau bloc `log_retention` (même pattern que `backup`/`login_protection` :
+  `_default_log_retention()` + `_merge_defaults`), `get_log_retention()` /
+  `update_log_retention(retention_days)` (défaut 30 jours, doit être ≥ 1).
+- **`admin_routes.py`** : `logs()` passe en GET+POST (formulaire de rétention) ; nouvelle route
+  `GET /admin/logs/download/<name>` (`send_file`, 404 si `resolve_log_file` ne reconnaît pas le
+  nom, audité `admin/log_download`).
+- **`admin_logs.html`** : 3ᵉ onglet **« Historique & téléchargement »** — formulaire de rétention
+  (jours) + tableau des fichiers (courant marqué, taille, date, bouton télécharger par ligne).
+  Réutilise le JS d'onglets générique déjà en place (aucun changement JS nécessaire).
+- **`backup.py`** (cohérence sauvegarde/restauration) : `_build_archive()` embarque désormais
+  `db.json` + le fichier courant + **toutes** les archives actuellement retenues
+  (`audit.list_archive_paths()`), pas juste `audit.jsonl.1` comme avant — une sauvegarde reste un
+  miroir fidèle de la profondeur d'historique réellement configurée. `restore_backup()` accepte en
+  retour tout membre reconnu par `audit.is_log_archive_name()` (plus `audit.jsonl.1` en repli pour
+  restaurer d'anciennes sauvegardes faites avant ce changement — replié dans le nouveau schéma via
+  `migrate_legacy_rotation()` juste après restauration) ; la copie de sécurité
+  (`data/pre-restore-backup/`) couvre désormais tous les fichiers effectivement remplacés, plus
+  seulement les 2 noms fixes d'avant.
+
 ### Captures d'écran dans le README (doc uniquement, pas de bump de VERSION)
 
 L'utilisateur a fourni 7 captures (dans `s3browser.zip`, extrait en `s3browser/` à la racine du

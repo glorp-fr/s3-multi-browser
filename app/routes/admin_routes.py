@@ -1,4 +1,4 @@
-from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from .. import audit, backup, storage, sync, version
 from ..auth import PERMISSIONS, admin_required
@@ -194,15 +194,35 @@ def sync_job_reassign(job_id):
 
 # --- Logs ------------------------------------------------------------------
 
-@bp.route("/logs")
+@bp.route("/logs", methods=["GET", "POST"])
 @admin_required
 def logs():
+    if request.method == "POST":
+        try:
+            storage.update_log_retention(retention_days=request.form.get("retention_days", 30))
+            audit.log("admin", "log_retention_config", "Rétention des archives de logs mise à jour")
+            flash("Rétention des logs enregistrée", "success")
+            return redirect(url_for("admin.logs"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
     recent, last_seq = audit.tail(limit=300)
     history = audit.connection_history(q=request.args.get("q", "").strip() or None, limit=200)
     return render_template(
         "admin_logs.html",
         recent=recent, last_seq=last_seq, history=history, categories=audit.CATEGORIES,
+        retention_cfg=storage.get_log_retention(), files=audit.list_log_files(),
     )
+
+
+@bp.route("/logs/download/<name>")
+@admin_required
+def logs_download(name):
+    path = audit.resolve_log_file(name)
+    if not path:
+        abort(404)
+    audit.log("admin", "log_download", f"Téléchargement du fichier de log « {name} »", target=name)
+    return send_file(path, as_attachment=True, download_name=name, mimetype="application/x-ndjson")
 
 
 @bp.route("/logs/tail")

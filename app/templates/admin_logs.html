@@ -19,6 +19,7 @@
 <div class="tabs" role="tablist">
   <button class="tab is-active" type="button" data-tab="live">Journal applicatif</button>
   <button class="tab" type="button" data-tab="conn">Historique des connexions</button>
+  <button class="tab" type="button" data-tab="archive">Historique &amp; téléchargement</button>
 </div>
 
 <section class="tabpane" data-pane="live">
@@ -64,6 +65,36 @@
       </tr>
     {% else %}
       <tr><td colspan="6" class="hint">Aucune connexion enregistrée</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="tabpane" data-pane="archive" hidden>
+  <form class="form-card" method="post" style="max-width:420px">
+    <label>Rétention des archives <span class="hint">(en jours — le fichier en cours n'est jamais purgé)</span>
+      <input type="number" name="retention_days" min="1" value="{{ retention_cfg.retention_days }}" style="width:6em">
+    </label>
+    <button class="btn blue" type="submit">Enregistrer</button>
+  </form>
+  <p class="hint" style="margin-top:10px">
+    Le journal applicatif tourne quand il dépasse 5 Mo : le fichier archivé garde sa date de
+    rotation plutôt que d'être écrasé. Les archives plus vieilles que la rétention ci-dessus sont
+    purgées automatiquement (à chaque rotation, et une fois par jour).
+  </p>
+
+  <table class="tbl" style="margin-top:18px">
+    <thead><tr><th>Fichier</th><th>Taille</th><th>Dernière écriture</th><th></th></tr></thead>
+    <tbody>
+    {% for f in files %}
+      <tr>
+        <td class="mono">{{ f.name }}{% if f.current %} <span class="bdg success">en cours</span>{% endif %}</td>
+        <td>{{ f.size | format_size }}</td>
+        <td class="mono">{{ f.mtime.strftime('%d/%m/%Y %H:%M') }} UTC</td>
+        <td><a class="btn sm ghost" href="{{ url_for('admin.logs_download', name=f.name) }}">{{ macros.icon("download") }} Télécharger</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" class="hint">Aucun fichier de log</td></tr>
     {% endfor %}
     </tbody>
   </table>

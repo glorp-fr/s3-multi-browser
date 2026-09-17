@@ -95,6 +95,13 @@ def _default_login_protection():
     }
 
 
+def _default_log_retention():
+    """How long rotated audit-log archives are kept on disk before being purged
+    (Administration > Logs). The live audit.jsonl is never purged by this — only the
+    dated audit-*.jsonl files created when it rotates."""
+    return {"retention_days": 30}
+
+
 def _merge_defaults(target, defaults):
     """Recursively fill missing keys in `target` from `defaults` (in place)."""
     for key, val in defaults.items():
@@ -108,7 +115,8 @@ def _merge_defaults(target, defaults):
 def _empty_db():
     return {"users": [], "accounts": [], "providers": [], "groups": [],
             "backup": _default_backup(), "sync_jobs": [], "bucket_config_snapshots": [],
-            "login_protection": _default_login_protection(), "_providers_seeded": False}
+            "login_protection": _default_login_protection(),
+            "log_retention": _default_log_retention(), "_providers_seeded": False}
 
 
 def _load():
@@ -127,6 +135,7 @@ def _load():
     data.setdefault("_providers_seeded", False)
     _merge_defaults(data.setdefault("backup", {}), _default_backup())
     _merge_defaults(data.setdefault("login_protection", {}), _default_login_protection())
+    _merge_defaults(data.setdefault("log_retention", {}), _default_log_retention())
     return data
 
 
@@ -594,6 +603,22 @@ def update_login_protection(*, enabled, max_attempts, window_minutes, ban_minute
         }
         _save(data)
         return data["login_protection"]
+
+
+def get_log_retention():
+    """Rotated audit-log archive retention (Administration > Logs)."""
+    return _load()["log_retention"]
+
+
+def update_log_retention(*, retention_days):
+    retention_days = int(retention_days)
+    if retention_days < 1:
+        raise ValueError("La rétention doit être d'au moins 1 jour")
+    with _lock:
+        data = _load()
+        data["log_retention"] = {"retention_days": retention_days}
+        _save(data)
+        return data["log_retention"]
 
 
 # --- Sync jobs -------------------------------------------------------------

@@ -1,9 +1,10 @@
 """Config backup (Administration > Sauvegarde).
 
-Bundles data/db.json + data/audit.jsonl(.1) into a timestamped .tar.gz and ships it to
-either an S3 bucket or an SMB share, then prunes the target to the configured retention.
-A background timer re-fires it on the configured schedule; the admin page also triggers
-it synchronously via "Sauvegarder maintenant".
+Bundles data/db.json + the full retained audit-log history (the live file and every
+archive Administration > Logs is still keeping under its retention setting) into a
+timestamped .tar.gz and ships it to either an S3 bucket or an SMB share, then prunes the
+target to the configured retention. A background timer re-fires it on the configured
+schedule; the admin page also triggers it synchronously via "Sauvegarder maintenant".
 
 Times are UTC (the server runs in UTC, like the audit log).
 """
@@ -21,11 +22,29 @@ from .storage import DATA_DIR
 ARCHIVE_PREFIX = "config-backup-"
 ARCHIVE_SUFFIX = ".tar.gz"
 
-# Files (relative to DATA_DIR) put in the archive when present.
-_MEMBERS = ("db.json", "audit.jsonl", "audit.jsonl.1")
+# Fixed (non-log) files put in the archive when present. The audit log side is dynamic —
+# see _log_members() — since how many archives exist depends on the retention setting.
+_FIXED_MEMBERS = ("db.json",)
+
+
+def _is_restorable_member(name):
+    """A tar member name this app's config backup ever writes: db.json, the live audit
+    log, a dated log archive, or (older backups) the legacy single-slot rotation."""
+    return name in _FIXED_MEMBERS or name == "audit.jsonl" or name == "audit.jsonl.1" \
+        or audit.is_log_archive_name(name)
 
 
 # --- archive ---------------------------------------------------------------
+
+def _log_members():
+    """(arcname, absolute path) for the live audit log + every currently retained archive —
+    whatever Administration > Logs is holding at backup time, so a restore can recreate
+    that same history."""
+    members = [("audit.jsonl", audit.LOG_PATH)]
+    for path in audit.list_archive_paths():
+        members.append((os.path.basename(path), path))
+    return members
+
 
 def _build_archive():
     """(filename, bytes) for a fresh gzip tarball of the current config files."""
@@ -33,10 +52,13 @@ def _build_archive():
     name = f"{ARCHIVE_PREFIX}{ts}{ARCHIVE_SUFFIX}"
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for member in _MEMBERS:
+        for member in _FIXED_MEMBERS:
             path = os.path.join(DATA_DIR, member)
             if os.path.isfile(path):
                 tar.add(path, arcname=member)
+        for arcname, path in _log_members():
+            if os.path.isfile(path):
+                tar.add(path, arcname=arcname)
     return name, buf.getvalue()
 
 
@@ -208,7 +230,8 @@ def restore_backup(name, *, actor="admin"):
         cfg = storage.get_backup_config()
         blob = _fetch(cfg, name)
         with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tar:
-            members = {m.name: m for m in tar.getmembers() if m.isfile() and m.name in _MEMBERS}
+            members = {m.name: m for m in tar.getmembers()
+                      if m.isfile() and _is_restorable_member(m.name)}
             if "db.json" not in members:
                 return {"ok": False, "message": "Archive invalide : db.json absent."}
             contents = {n: tar.extractfile(m).read() for n, m in members.items()}
@@ -216,7 +239,7 @@ def restore_backup(name, *, actor="admin"):
 
         os.makedirs(SAFETY_DIR, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        for member in _MEMBERS:
+        for member in contents:
             path = os.path.join(DATA_DIR, member)
             if os.path.isfile(path):
                 shutil.copy2(path, os.path.join(SAFETY_DIR, f"{member}.{ts}.bak"))
@@ -227,6 +250,7 @@ def restore_backup(name, *, actor="admin"):
             with open(tmp_path, "wb") as f:
                 f.write(data)
             os.replace(tmp_path, path)
+        audit.migrate_legacy_rotation()  # fold a restored legacy audit.jsonl.1 into the archive scheme
 
         # Appended *after* restoring — lands in the just-restored audit.jsonl, marking
         # exactly where the restore happened in the resumed history.
