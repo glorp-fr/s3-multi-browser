@@ -95,6 +95,6 @@ def format_size(size_bytes):
         return "—"
     tib = size_bytes / (1024 ** 4)
     if tib >= 1:
-        return f"{tib:.2f} TiB"
+        return f"{tib:.2f} Tio"
     gib = size_bytes / (1024 ** 3)
-    return f"{gib:.2f} GiB"
+    return f"{gib:.2f} Gio"

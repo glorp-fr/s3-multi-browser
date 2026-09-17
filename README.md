@@ -48,7 +48,7 @@ chiffré côté serveur.
     moins de 24 h sont ignorés et comptabilisés dans le résumé), ou supprimer plusieurs buckets ;
   - explorateur d'objets : supprimer une sélection d'objets et de dossiers (récursif), ou la
     télécharger en une archive `.zip` (construite côté serveur).
-- **Volumétrie** : taille utilisée par bucket et par compte affichée en GiB/TiB, mise en cache et
+- **Volumétrie** : taille utilisée par bucket et par compte affichée en Gio/Tio, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
 - **Création de bucket** : formulaire dépliable (case « Versionning », case « Object Lock » — avec
