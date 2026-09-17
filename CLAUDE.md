@@ -40,6 +40,35 @@ Les technos utilisées doivent etre tres light, pas de base de données par exem
 
 ## Journal des évolutions (tenu à jour au fil des sessions Claude Code)
 
+### Chiffrement de bucket (SSE-S3) à la création et en configuration (v0.9.10)
+
+Demande de l'utilisateur : « à la création d'un bucket, ou en modification, il faut proposer
+l'activation du chiffrement ». Choix validé (`AskUserQuestion`) : **SSE-S3 (AES256) uniquement**,
+pas de SSE-KMS — simple case à cocher, aucune clé à gérer, garanti compatible avec tous les
+providers S3-compatibles visés (contrairement à KMS, pas garanti partout).
+
+- **`app/bucket_config.py`** : `get_encryption`/`set_encryption`, même symétrie get/set que les
+  4 autres réglages (permet l'undo générique existant). `get_encryption` renvoie `{"supported",
+  "enabled"}` — `NotImplemented`/`MethodNotAllowed`/`UnsupportedOperation` ⇒ `supported: False`
+  (même pattern que l'Object Lock, pour les providers qui n'implémentent pas
+  `GetBucketEncryption`) ; `ServerSideEncryptionConfigurationNotFoundError` ⇒ non configuré
+  plutôt qu'une erreur. `set_encryption(enabled=False)` avale la même erreur « pas configuré »
+  sur `delete_bucket_encryption` (idempotent).
+- **`bucket_config_routes.py`** : nouvelle section `encryption` dans `SECTIONS`, route POST
+  `/config/encryption`, branche dans `undo()`. Suit exactement le pattern déjà en place pour
+  versionning/lock (snapshot avant modif, audit `s3_write/bucket_encryption_set`).
+- **`bucket_config.html`** : nouvel onglet **Chiffrement** (entre Verrouillage et Lifecycle) —
+  état actuel + case à cocher + bouton Annuler, ou message « non supporté » si le provider ne
+  l'implémente pas.
+- **`explorer_routes.bucket_new`** + **`buckets.html`** : case « Activer le chiffrement » dans le
+  formulaire dépliable de création, appliquée après `create_bucket` (comme versionning/lock/
+  lifecycle : échec non bloquant, juste un flash si l'activation post-création rate).
+- **Tests** (script + `moto`, non versionné) : `get_encryption` sur bucket neuf (non configuré),
+  cycle activer/désactiver/ré-désactiver (idempotent, pas d'exception), création de bucket avec
+  la case cochée → chiffrement effectivement actif côté S3, rendu de l'onglet Chiffrement dans
+  `/config`, désactivation via le formulaire, puis annulation → l'état activé précédent est bien
+  restauré.
+
 ### Historisation des logs avec rétention + téléchargement (v0.9.9)
 
 Demande de l'utilisateur : « mettre en place une historisation des logs avec paramètre de

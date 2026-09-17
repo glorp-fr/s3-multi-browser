@@ -13,7 +13,7 @@ from ..s3client import get_client
 
 bp = Blueprint("bucket_config", __name__)
 
-SECTIONS = ("versioning", "lock", "lifecycle", "policy", "acl")
+SECTIONS = ("versioning", "lock", "encryption", "lifecycle", "policy", "acl")
 
 
 def _get_authorized_account(account_id):
@@ -53,6 +53,7 @@ def config(account_id, bucket):
     for section, loader in (
         ("versioning", lambda: bucket_config.get_versioning(client, bucket)),
         ("lock", lambda: bucket_config.get_object_lock(client, bucket)),
+        ("encryption", lambda: bucket_config.get_encryption(client, bucket)),
         ("lifecycle", lambda: bucket_config.get_lifecycle(client, bucket)),
         ("policy", lambda: bucket_config.get_policy(client, bucket)),
         ("acl", lambda: bucket_config.get_acl(client, bucket)),
@@ -124,6 +125,26 @@ def lock(account_id, bucket):
                   f"Rétention par défaut du verrouillage mise à jour — {account['name']}/{bucket}",
                   target=f"{account['name']}/{bucket}")
         flash("Verrouillage (rétention par défaut) mis à jour", "success")
+    except ClientError as exc:
+        flash(f"Erreur : {exc}", "error")
+    return _back(account_id, bucket)
+
+
+@bp.route("/accounts/<account_id>/buckets/<bucket>/config/encryption", methods=["POST"])
+@login_required
+def encryption(account_id, bucket):
+    account = _get_authorized_account(account_id)
+    _require_bucket_admin(account_id)
+    client = get_client(account)
+    enabled = bool(request.form.get("enabled"))
+    try:
+        before = bucket_config.get_encryption(client, bucket)
+        bucket_config.set_encryption(client, bucket, enabled)
+        _save_snapshot(account_id, bucket, "encryption", before)
+        audit.log("s3_write", "bucket_encryption_set",
+                  f"Chiffrement {'activé' if enabled else 'désactivé'} — {account['name']}/{bucket}",
+                  target=f"{account['name']}/{bucket}")
+        flash("Chiffrement mis à jour", "success")
     except ClientError as exc:
         flash(f"Erreur : {exc}", "error")
     return _back(account_id, bucket)
@@ -265,6 +286,8 @@ def undo(account_id, bucket, section):
             bucket_config.set_versioning(client, bucket, value)
         elif section == "lock":
             bucket_config.set_object_lock_rule(client, bucket, (value or {}).get("rule"))
+        elif section == "encryption":
+            bucket_config.set_encryption(client, bucket, (value or {}).get("enabled", False))
         elif section == "lifecycle":
             bucket_config.set_lifecycle(client, bucket, value or [])
         elif section == "policy":

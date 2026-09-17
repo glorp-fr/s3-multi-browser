@@ -51,15 +51,18 @@ chiffré côté serveur.
 - **Volumétrie** : taille utilisée par bucket et par compte affichée en Gio/Tio, mise en cache et
   actualisable manuellement au maximum une fois toutes les 24h (calcul coûteux car basé sur un listing
   complet du bucket).
-- **Création de bucket** : formulaire dépliable (case « Versionning », case « Object Lock » — avec
-  rétention par défaut optionnelle — et une règle de lifecycle optionnelle), pour poser ces réglages
-  dès la création plutôt que de revenir ensuite dans *Configurer*. Cocher Object Lock active
-  automatiquement le versionning (imposé par S3) ; c'est le seul réglage qui **ne peut pas** être
-  ajouté après coup, contrairement aux autres.
+- **Création de bucket** : formulaire dépliable (case « Chiffrement », case « Versionning », case
+  « Object Lock » — avec rétention par défaut optionnelle — et une règle de lifecycle optionnelle),
+  pour poser ces réglages dès la création plutôt que de revenir ensuite dans *Configurer*. Cocher
+  Object Lock active automatiquement le versionning (imposé par S3) ; c'est le seul réglage qui
+  **ne peut pas** être ajouté après coup, contrairement aux autres.
 - **Configuration de bucket** (bouton *Configurer*, droit `bucket_admin`) : édition graphique
-  (cases à cocher / champs, pas de JSON à écrire à la main sauf pour la policy) de 5 réglages S3,
+  (cases à cocher / champs, pas de JSON à écrire à la main sauf pour la policy) de 6 réglages S3,
   chacun affichant son état actuel et annulable indépendamment (un niveau d'undo, état restauré
   tel qu'il était juste avant le dernier « Enregistrer ») :
+  - **Chiffrement** : SSE-S3 (AES256, clé gérée par le provider) activable/désactivable à tout
+    moment — case à cocher, pas de clé KMS à gérer ; affiché « non supporté » si le provider
+    S3-compatible ne l'implémente pas ;
   - **Versionning** : activé / suspendu (irréversible vers « jamais activé », limitation S3) ;
   - **Object Lock** : rétention par défaut (mode Gouvernance/Conformité + durée) si le bucket a
     été créé avec le verrouillage activé (non activable après coup, limitation S3) ;

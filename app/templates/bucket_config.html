@@ -9,6 +9,7 @@
 <div class="tabs">
   <button class="tab is-active" type="button" data-tab="versioning">Versionning</button>
   <button class="tab" type="button" data-tab="lock">Verrouillage</button>
+  <button class="tab" type="button" data-tab="encryption">Chiffrement</button>
   <button class="tab" type="button" data-tab="lifecycle">Lifecycle</button>
   <button class="tab" type="button" data-tab="policy">Policy</button>
   <button class="tab" type="button" data-tab="acl">ACL</button>
@@ -104,6 +105,30 @@
     <button class="btn blue" type="submit">Enregistrer</button>
   </form>
   {{ undo_button("lock") }}
+  {% endif %}
+</section>
+
+<!-- Encryption ------------------------------------------------------------------------ -->
+<section class="tabpane" data-pane="encryption" hidden>
+  {% if errors.encryption %}
+    <p class="hint">Erreur de lecture : {{ errors.encryption }}</p>
+  {% elif not state.encryption.supported %}
+    <p class="hint">Chiffrement non supporté par ce provider.</p>
+  {% else %}
+  <p class="hint">État actuel :
+    <span class="bdg {{ 'success' if state.encryption.enabled else 'inactif' }}">
+      {{ "activé (SSE-S3 / AES256)" if state.encryption.enabled else "désactivé" }}
+    </span>
+  </p>
+  <form class="form-card" method="post"
+        action="{{ url_for('bucket_config.encryption', account_id=account.id, bucket=bucket) }}">
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" value="1" {{ "checked" if state.encryption.enabled else "" }}>
+      Chiffrer par défaut les objets de ce bucket (SSE-S3, AES256, clé gérée par le provider)
+    </label>
+    <button class="btn blue" type="submit">Enregistrer</button>
+  </form>
+  {{ undo_button("encryption") }}
   {% endif %}
 </section>
 

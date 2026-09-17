@@ -129,6 +129,7 @@ def bucket_new(account_id):
         flash("Nom de bucket requis", "error")
         return redirect(url_for("explorer.buckets", account_id=account_id))
 
+    encryption_enabled = bool(request.form.get("encryption"))
     lock_enabled = bool(request.form.get("lock"))
     # S3 requires versioning on an Object-Lock bucket — enabled regardless of the checkbox.
     versioning_enabled = lock_enabled or bool(request.form.get("versioning"))
@@ -167,6 +168,11 @@ def bucket_new(account_id):
                   target=f"{account['name']}/{name}", status="fail")
         return redirect(url_for("explorer.buckets", account_id=account_id))
 
+    if encryption_enabled:
+        try:
+            bucket_config.set_encryption(client, name, True)
+        except ClientError as exc:
+            flash(f"Bucket créé, mais le chiffrement n'a pas pu être activé : {exc}", "error")
     if versioning_enabled:
         try:
             bucket_config.set_versioning(client, name, "Enabled")

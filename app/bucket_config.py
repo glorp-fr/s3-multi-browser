@@ -64,6 +64,40 @@ def set_object_lock_rule(client, bucket, rule):
     client.put_object_lock_configuration(Bucket=bucket, ObjectLockConfiguration=cfg)
 
 
+# --- Encryption (SSE-S3 / AES256 only — see set_encryption) ------------------------------
+
+def get_encryption(client, bucket):
+    try:
+        resp = client.get_bucket_encryption(Bucket=bucket)
+    except ClientError as exc:
+        if _not_found(exc, "ServerSideEncryptionConfigurationNotFoundError"):
+            return {"supported": True, "enabled": False}
+        if _not_found(exc, "NotImplemented", "MethodNotAllowed", "UnsupportedOperation"):
+            return {"supported": False, "enabled": False}
+        raise
+    rules = resp.get("ServerSideEncryptionConfiguration", {}).get("Rules", [])
+    enabled = any(r.get("ApplyServerSideEncryptionByDefault", {}).get("SSEAlgorithm")
+                 for r in rules)
+    return {"supported": True, "enabled": enabled}
+
+
+def set_encryption(client, bucket, enabled):
+    """Only SSE-S3 (AES256, provider-managed key) — no KMS key to configure."""
+    if enabled:
+        client.put_bucket_encryption(
+            Bucket=bucket,
+            ServerSideEncryptionConfiguration={
+                "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+            },
+        )
+    else:
+        try:
+            client.delete_bucket_encryption(Bucket=bucket)
+        except ClientError as exc:
+            if not _not_found(exc, "ServerSideEncryptionConfigurationNotFoundError"):
+                raise
+
+
 # --- Lifecycle ---------------------------------------------------------------------------
 
 def get_lifecycle(client, bucket):
